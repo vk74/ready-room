@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "db ({{APP_ADMIN_DB_USERNAME}})",
+      "Group": "Servers",
+      "Host": "db",
+      "Port": 5432,
+      "MaintenanceDB": "maindb",
+      "Username": "{{APP_ADMIN_DB_USERNAME}}",
+      "SSLMode": "prefer"
+    }
+  }
+}

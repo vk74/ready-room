@@ -1,0 +1,107 @@
+# Version: 0.26.2
+# Purpose: Podman Quadlet container unit for fs store (SeaweedFS object storage / file storage).
+# Deployment file: fs.container
+# Logic: Runs SeaweedFS single-node (master+volume+filer+S3 gateway) on internal network only.
+#        S3 API on internal port {{APP_FS_S3_PORT}}; no PublishPort (Caddy proxies /objects/*).
+#        S3 credentials loaded from Podman secret (JSON config mounted at /run/secrets/{{APP_FS_SECRET_NAME}}).
+#        Volume files limited to 1 GB each (-master.volumeSizeLimitMB=1024) to avoid 30 GB preallocation.
+#        Up to {{APP_FS_VOLUME_MAX}} volume files per server (-volume.max); LevelDB index reduces memory vs in-memory.
+#        Exec passes only subcommand args (no "weed" prefix): entrypoint.sh adds /usr/bin/weed automatically.
+#
+# Changes in v0.26.2:
+# - Rename EVI_* configuration keys and template placeholders to APP_* (EVI_APP_DB_PASSWORD becomes APP_DB_PASSWORD).
+# 
+# Changes in v0.25.4:
+# - Removed product name prefix from [Unit] Description.
+#
+# Changes in v0.23.12:
+# - LogDriver=journald (explicit: never fall back to an unbounded k8s-file log).
+#
+# Changes in v1.8.3:
+# - -volume.max templated via {{EVI_FS_VOLUME_MAX}} (from EVI_FS_VOLUME_MAX_GB in evi.env).
+#
+# Changes in v1.8.2:
+# - Raised -volume.max from 50 to 100 (up to ~100 GB raw volume capacity on a single node).
+#
+# Changes in v1.8.1:
+# - Fixed accidental non-comment changelog line (leftover from v1.8.0 edit) that was not prefixed with '#'.
+#   That line broke quadlet/systemd parsing so fs.service never started (and dependent units misbehaved).
+#
+# Changes in v1.8.0:
+# - Volume mount name / unit deps note: fs_data; dependencies assets-volume -> fs-volume.
+#
+# Changes in v1.7.0:
+# - Added Environment=FS_ACCESS_KEY/FS_SECRET_KEY for Cockpit container Integration tab
+#   visibility (UX parity with db.container, which exposes EVI_APP_DB_PASSWORD/EVI_ADMIN_DB_PASSWORD
+#   the same way). SeaweedFS itself does NOT read these env vars — credentials are loaded from
+#   the JSON config in the Podman secret mount via -s3.config below; the env vars are purely
+#   informational so an operator can find S3 keys in the same place as DB passwords.
+#
+# Changes in v1.6.0:
+# - Updated network dependency: network.service -> network-network.service
+#   (Quadlet generates <name>-network.service from <name>.network files).
+#
+# Changes in v1.5.0:
+# - Renamed network dependency: evi-network.service -> network.service.
+#
+# Changes in v1.4.0:
+# - Renamed volume mount from evi_fs_data to fs_data.
+#
+# Changes in v1.3.0:
+# - Renamed from evi-fs.container: ContainerName and systemd unit dependencies updated to short names.
+#
+# Changes in v1.2.0:
+# - Comments: public path via Caddy is /objects/* (SPA uses /assets/* for Vite bundles).
+#
+# Changes in v1.1.0:
+# - Fixed Exec: removed "weed" prefix — entrypoint.sh already calls /usr/bin/weed, passing "weed server ..."
+#   caused "weed: unknown subcommand 'weed'" error and container crash on every start.
+#
+# Changes in v1.0.0:
+# - Initial fs container unit (SeaweedFS single-node, internal-only, persistent volume)
+#
+
+[Unit]
+Description=fs (file storage / SeaweedFS) (Podman)
+Wants=network-online.target
+After=network-online.target
+Requires=network-network.service fs-volume.service
+After=network-network.service fs-volume.service
+
+[Container]
+# Rendered by install.sh (deploy)
+Image={{APP_FS_IMAGE}}
+ContainerName=fs
+
+# Explicit: never fall back to an unbounded k8s-file log
+LogDriver=journald
+
+# Internal network only (no PublishPort; Caddy routes /objects/* to this container)
+Network={{APP_NETWORK}}
+
+# Persistent data volume
+Volume=fs_data:/data:Z
+
+# S3 credentials from Podman secret (JSON config for SeaweedFS S3 identity)
+PodmanArgs=--secret={{APP_FS_SECRET_NAME}},type=mount,target=/run/secrets/{{APP_FS_SECRET_NAME}}
+
+# S3 credentials surfaced as env vars for Cockpit Integration tab visibility
+# (UX parity with db.container APP_DB_PASSWORD/APP_ADMIN_DB_PASSWORD).
+# SeaweedFS does not read these — it loads credentials from the JSON above via -s3.config=.
+Environment=FS_ACCESS_KEY={{APP_FS_ACCESS_KEY}}
+Environment=FS_SECRET_KEY={{APP_FS_SECRET_KEY}}
+
+# SeaweedFS single-node: master + volume server + filer + S3 gateway in one process
+# Entrypoint /entrypoint.sh matches on first arg "server" and calls: exec /usr/bin/weed server ...
+# Do NOT prefix with "weed" — that causes "weed: unknown subcommand 'weed'" crash.
+Exec=server -filer -s3 -s3.port={{APP_FS_S3_PORT}} -s3.config=/run/secrets/{{APP_FS_SECRET_NAME}} -master.volumeSizeLimitMB=1024 -volume.index=leveldb -volume.max={{APP_FS_VOLUME_MAX}}
+
+# Resource limits (optional)
+{{APP_PODMANARGS_LIMITS_FS}}
+
+[Service]
+Restart=always
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,120 @@
+#
+# Version: 0.27.2
+# Purpose: Single source of truth for the files that MUST be present in the
+#   deploy-kit for it to function. Consumed by the release gate
+#   (validate_prerequisites in release.sh) and by kit-archive validation
+#   (validate_kit_archive). download-update.sh also validates a newly
+#   downloaded kit against this list when the file is present in that kit.
+#   Adding a load-bearing file to this kit means adding it here in the same
+#   commit.
+# File: MANIFEST
+#
+# Changes in v0.27.2:
+# - Added deploy-kit/scripts/admin/admin-env-apply.sh and deploy-kit/scripts/admin/admin-set-admin-password.sh.
+# - Added deploy-kit/scripts/tls/check-certificate.sh and deploy-kit/scripts/tls/diagnose-ssl.sh.
+#
+# Changes in v0.26.3:
+# - Script paths are under scripts/host, scripts/admin, scripts/backup, scripts/tls, and scripts/lib.
+# - Cockpit panel sync is deploy-kit/scripts/host/cockpit-panel-sync.sh.
+#
+# Changes in v0.26.2:
+# - Cockpit admin panel paths are deploy-kit/cockpit-app-admin/ (admin.js, update.js, admin.css, admin-dispatch.sh.tpl, update-dispatch.sh.tpl).
+#
+# Changes in v0.25.4:
+# - Env templates are deploy-kit/env/app.template.env and deploy-kit/env/app.secrets.template.env.
+#
+# Changes in v0.24.5:
+# - Added deploy-kit/cockpit-evi-admin/helper.update.status.js (updates panel action flags).
+#
+# Changes in v0.23.12:
+# - Added deploy-kit/scripts/journald-limits-ensure.sh (host journald caps).
+#
+# Changes in v0.23.10:
+# - Added deploy-kit/scripts/install-fail2ban.sh (kit-managed sshd jail).
+#
+# Changes in v0.23.9:
+# - Added deploy-kit/quadlet-templates/state.volume (Valkey AOF named volume).
+# - Scripts listed as uninstall.sh and registry-tags.sh (renamed).
+#
+# Changes in v0.23.8:
+# - Added deploy-kit/scripts/install-cockpit-files.sh (Cockpit File browser helper).
+#
+# Changes in v0.23.5:
+# - Added deploy-kit/scripts/set-github-token.sh (Cockpit persist + worker re-render).
+#
+# Changes in v0.23.4:
+# - Added deploy-kit/scripts/github-auth.sh (GitHub access-key helpers sourced by install.sh).
+#
+# Changes in v0.23.2:
+# - Initial manifest: installer, prerequisites, env templates, render and
+#   host-sync scripts, quadlet/Caddy/valkey/pgadmin/systemd templates, and
+#   the Cockpit admin panel files.
+#
+
+# installer + prerequisites + env templates
+deploy-kit/MANIFEST
+deploy-kit/install.sh
+deploy-kit/prerequisites.conf
+deploy-kit/env/app.template.env
+deploy-kit/env/app.secrets.template.env
+
+# scripts sourced or invoked by install.sh / apply-update.sh
+deploy-kit/scripts/lib/render-templates.sh
+deploy-kit/scripts/lib/github-auth.sh
+deploy-kit/scripts/lib/registry-tags.sh
+deploy-kit/scripts/admin/set-github-token.sh
+deploy-kit/scripts/admin/check-disk-space.sh
+deploy-kit/scripts/admin/admin-env-apply.sh
+deploy-kit/scripts/admin/admin-set-admin-password.sh
+deploy-kit/scripts/host/sync-host-prerequisites.sh
+deploy-kit/scripts/host/install-cockpit-files.sh
+deploy-kit/scripts/host/install-fail2ban.sh
+deploy-kit/scripts/host/journald-limits-ensure.sh
+deploy-kit/scripts/host/check-prerequisites.sh
+deploy-kit/scripts/host/check-rootless-host.sh
+deploy-kit/scripts/host/cockpit-panel-sync.sh
+deploy-kit/scripts/host/ufw-ensure-active.sh
+deploy-kit/scripts/host/ufw-add-rules.sh
+deploy-kit/scripts/host/ufw-delete-rules.sh
+deploy-kit/scripts/host/uninstall.sh
+deploy-kit/scripts/backup/backup-create.sh
+deploy-kit/scripts/backup/backup-verify.sh
+deploy-kit/scripts/backup/backup-estimate.sh
+deploy-kit/scripts/tls/gen-self-signed-tls.sh
+deploy-kit/scripts/tls/import-tls.sh
+deploy-kit/scripts/tls/gen-jwt-rs256-keypair.sh
+deploy-kit/scripts/tls/check-certificate.sh
+deploy-kit/scripts/tls/diagnose-ssl.sh
+
+# quadlet templates (render-templates.sh / apply-update.sh)
+deploy-kit/quadlet-templates/network.network
+deploy-kit/quadlet-templates/db.container
+deploy-kit/quadlet-templates/db.volume
+deploy-kit/quadlet-templates/be.container
+deploy-kit/quadlet-templates/fe.container
+deploy-kit/quadlet-templates/worker.container
+deploy-kit/quadlet-templates/fs.container
+deploy-kit/quadlet-templates/fs.volume
+deploy-kit/quadlet-templates/state.container
+deploy-kit/quadlet-templates/state.volume
+deploy-kit/quadlet-templates/reverse-proxy.container
+deploy-kit/quadlet-templates/pgadmin.container
+
+# reverse-proxy / state / pgadmin / disk-monitor templates
+deploy-kit/reverse-proxy/Caddyfile.template
+deploy-kit/reverse-proxy/Caddyfile.site.manual.template
+deploy-kit/reverse-proxy/Caddyfile.site.letsencrypt.template
+deploy-kit/state/valkey.conf
+deploy-kit/pgadmin/servers.json.template
+deploy-kit/systemd-templates/disk-monitor.service
+deploy-kit/systemd-templates/disk-monitor.timer
+
+# Cockpit admin panel (install.sh copies these; scripts/host/cockpit-panel-sync.sh installs the package)
+deploy-kit/cockpit-app-admin/manifest.json
+deploy-kit/cockpit-app-admin/index.html
+deploy-kit/cockpit-app-admin/admin.js
+deploy-kit/cockpit-app-admin/update.js
+deploy-kit/cockpit-app-admin/helper.update.status.js
+deploy-kit/cockpit-app-admin/admin.css
+deploy-kit/cockpit-app-admin/admin-dispatch.sh.tpl
+deploy-kit/cockpit-app-admin/update-dispatch.sh.tpl

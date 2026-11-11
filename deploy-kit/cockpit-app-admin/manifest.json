@@ -1,0 +1,10 @@
+{
+  "version": 0,
+  "tools": {
+    "app-admin": {
+      "label": "app admin tools",
+      "path": "index.html",
+      "order": 90
+    }
+  }
+}

@@ -1,0 +1,29 @@
+# Version: 0.26.2
+# Purpose: Caddy reverse-proxy configuration template for evi.
+# Deployment file: Caddyfile.template
+# Logic: Provides HTTPS ingress on a single domain, routing `/` to fe and `/api/*` to be.
+# Supports Let's Encrypt (ACME) and manual TLS. Rendered by install.sh (deploy).
+#
+# Changes in v0.26.2:
+# - Rename EVI_* configuration keys and template placeholders to APP_* (EVI_APP_DB_PASSWORD becomes APP_DB_PASSWORD).
+# 
+# Changes in v1.2.0:
+# - Updated routing comments to short container names (fe, be).
+#
+# Changes in v1.1.0:
+# - Added auto_https off for manual TLS mode to fix TLS handshake errors
+# - Changed HTTP redirect to use port-based binding instead of domain-based
+#
+# Changes in v1.0.0:
+# - Initial reverse-proxy routing: / -> fe, /api -> be, HTTP->HTTPS redirect
+#
+
+{
+	# Global options rendered by install.sh (deploy)
+	{{APP_CADDY_GLOBAL_OPTIONS}}
+}
+
+{{APP_HTTP_REDIRECT_BLOCK}}
+
+{{APP_TLS_SITE_BLOCK}}
+

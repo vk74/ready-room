@@ -1,0 +1,91 @@
+# Version: 0.26.2
+# Purpose: Podman Quadlet container unit for pgAdmin 4.
+# Deployment file: pgadmin.container
+# Logic: Runs pgAdmin web interface, connected to internal network.
+#        Enabled only if APP_PGADMIN_ENABLED=true.
+#        Bind address from APP_PGADMIN_HOST (0.0.0.0 = access from any computer on port APP_PGADMIN_PORT).
+#
+# Changes in v0.26.2:
+# - Rename EVI_* configuration keys and template placeholders to APP_* (EVI_APP_DB_PASSWORD becomes APP_DB_PASSWORD).
+# 
+# Changes in v0.25.4:
+# - Removed product name prefix from [Unit] Description.
+#
+# Changes in v0.23.12:
+# - LogDriver=journald (explicit: never fall back to an unbounded k8s-file log).
+#
+# Changes in v1.7.0:
+# - Updated network dependency: network.service -> network-network.service
+#   (Quadlet generates <name>-network.service from <name>.network files).
+#
+# Changes in v1.6.0:
+# - Renamed network dependency: evi-network.service -> network.service.
+#
+# Changes in v1.5.0:
+# - Renamed from evi-pgadmin.container: ContainerName and systemd unit dependencies updated to short names.
+#
+# Changes in v1.4.0:
+# - Bind address from EVI_PGADMIN_HOST (default 0.0.0.0) for browser access from any computer
+# - Port remains 5445
+#
+# Changes in v1.3.0:
+# - Changed port from 5050 to 5445 (matches dev environment)
+# - Fixed PublishPort syntax: replaced with PodmanArgs --publish for IP binding
+#   (Quadlet PublishPort doesn't support IP address binding)
+#
+# Changes in v1.2.0:
+# - Added required PGADMIN_DEFAULT_EMAIL and PGADMIN_DEFAULT_PASSWORD
+# - Added persistent volume for pgAdmin data (/var/lib/pgadmin)
+# - Removed SERVER_MODE=False (not supported in container mode)
+# - Added PGADMIN_LISTEN_PORT to match internal port
+#
+# Changes in v1.1.0:
+# - Port bound to localhost only (127.0.0.1) for security
+# - Added servers.json mount for pre-configured db connection
+#
+# Changes in v1.0.0:
+# - Initial pgAdmin container unit
+#
+
+[Unit]
+Description=pgAdmin 4 (Podman)
+Wants=network-online.target
+After=network-online.target
+Requires=network-network.service db.service
+After=network-network.service db.service
+
+[Container]
+# Rendered by install.sh (deploy)
+Image={{APP_PGADMIN_IMAGE}}
+ContainerName=pgadmin
+
+# Explicit: never fall back to an unbounded k8s-file log
+LogDriver=journald
+
+# Internal network
+Network={{APP_NETWORK}}
+
+# Publish port: APP_PGADMIN_HOST (0.0.0.0 = all interfaces). Use firewall to restrict access.
+PodmanArgs=--publish {{APP_PGADMIN_HOST}}:{{APP_PGADMIN_PORT}}:80
+PodmanArgs=--memory=512m
+
+# Required credentials for pgAdmin web interface
+# Email is fixed, password reuses APP_ADMIN_DB_PASSWORD for simplicity
+Environment=PGADMIN_DEFAULT_EMAIL={{APP_PGADMIN_EMAIL}}
+Environment=PGADMIN_DEFAULT_PASSWORD={{APP_ADMIN_DB_PASSWORD}}
+
+# Disable master password requirement for easier access to pre-configured servers
+Environment=PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED=False
+
+# Mount pre-configured servers.json for db connection (loaded on first launch only)
+Volume={{APP_STATE_DIR}}/pgadmin/servers.json:/pgadmin4/servers.json:ro,Z
+
+# Persistent storage for pgAdmin data (sessions, config db, user files)
+Volume={{APP_STATE_DIR}}/pgadmin/data:/var/lib/pgadmin:Z
+
+[Service]
+Restart=always
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target

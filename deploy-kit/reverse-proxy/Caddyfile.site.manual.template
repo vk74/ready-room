@@ -1,0 +1,91 @@
+# Version: 0.26.2
+# Purpose: Caddy site block template for manual TLS certificate/key.
+# Deployment file: Caddyfile.site.manual.template
+# Logic: Used by install.sh (deploy) when APP_TLS_MODE=manual.
+#
+# Changes in v0.26.2:
+# - Rename EVI_* configuration keys and template placeholders to APP_* (EVI_APP_DB_PASSWORD becomes APP_DB_PASSWORD).
+# 
+# Changes in v1.10.0:
+# - Phase 3 security headers: added Permissions-Policy (restrictive) and a
+#   Content-Security-Policy-Report-Only for the SPA (same-origin default-src; 'unsafe-inline'
+#   only for styles). Report-Only so it can be validated in prod before enforcing (flip the
+#   header name to Content-Security-Policy). HSTS intentionally still omitted here (self-signed).
+#
+# Changes in v1.9.0:
+# - Normalize /api/api/* (legacy FE baseURL=/api + path=/api/...) before proxying to backend.
+#
+# Changes in v1.8.0:
+# - Fixed API routing: changed `handle_path /api/*` to `handle /api/*` so Caddy
+#   keeps the `/api` prefix when proxying to backend. Backend routes are mounted
+#   under `/api/...`; stripping the prefix caused SYS-ERR-404 for all API calls.
+#
+# Changes in v1.7.0:
+# - /objects reverse_proxy now keeps the incoming Host header untouched for /objects/* requests.
+#   Presigned URLs are signed with public-origin host; Caddy must forward host as-is.
+#
+# Changes in v1.6.0:
+#
+# Changes in v1.5.0:
+# - Updated reverse_proxy upstreams to short container names (be, fs, fe).
+#
+# Changes in v1.4.0:
+# - Object storage public path is /objects/* (not /assets/*): Vite SPA serves hashed bundles under /assets/;
+#   routing /assets/* to SeaweedFS caused 403 XML responses and a blank UI.
+#
+# Changes in v1.3.0:
+#   handle_path strips the /objects prefix before forwarding to SeaweedFS S3 path-style API.
+#
+# Changes in v1.2.0:
+# - Removed HSTS header with preload for self-signed certificates
+# - HSTS with preload blocks Chrome's ability to show "Advanced" button for certificate bypass
+# - Users can now proceed past certificate warnings in Chrome
+#
+# Changes in v1.1.0:
+# - Changed from https://DOMAIN:PORT to :PORT syntax to fix TLS handshake errors
+# - Port-based binding works better with manual certificates and IP addresses
+#
+# Changes in v1.0.0:
+# - Initial manual TLS-enabled site block routing / and /api
+#
+
+:{{APP_HTTPS_PORT}} {
+	encode zstd gzip
+
+	# Manual TLS cert/key paths inside container (mounted by Quadlet)
+	tls {{APP_TLS_CERT_IN_CONTAINER}} {{APP_TLS_KEY_IN_CONTAINER}}
+
+	# Basic security headers
+	# Note: HSTS with preload removed for self-signed certificates to allow Chrome bypass
+	# HSTS with preload blocks certificate error bypass in Chrome
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=(), interest-cohort=()"
+		# CSP in Report-Only first: browsers report violations without blocking, so the policy
+		# can be validated in production before switching the header name to
+		# Content-Security-Policy to enforce. SPA is same-origin (fe, /api, /objects);
+		# style-src allows 'unsafe-inline' for Vuetify's injected styles.
+		Content-Security-Policy-Report-Only "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; worker-src 'self' blob:"
+	}
+
+	handle /api/api/* {
+		uri strip_prefix /api
+		reverse_proxy be:{{APP_BE_PORT}}
+	}
+
+	handle /api/* {
+		reverse_proxy be:{{APP_BE_PORT}}
+	}
+
+	# Object storage (SeaweedFS S3 gateway). Must not use /assets/* — Vite SPA bundles are served from there by evi-fe (Nginx).
+	handle_path /objects/* {
+		reverse_proxy fs:{{APP_FS_S3_PORT}}
+	}
+
+	handle {
+		reverse_proxy fe:{{APP_FE_PORT}}
+	}
+}
+

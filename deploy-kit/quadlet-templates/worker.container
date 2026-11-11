@@ -1,0 +1,103 @@
+# Version: 0.27.2
+# Purpose: Podman Quadlet container unit for worker (Go background job processor).
+# Deployment file: worker.container
+# Logic: Runs on internal network only. Connects to db, fs, and state (Valkey).
+#        Starts after DB, Valkey, and fs store are available.
+#
+# Changes in v0.27.2:
+# - Pass APP_INSTALL_REPO into the worker container.
+#
+# Changes in v0.26.2:
+# - Pass APP_GITHUB_TOKEN into the worker container.
+# 
+# Changes in v0.25.4:
+# - Removed product name prefix from [Unit] Description.
+#
+# Changes in v0.23.12:
+# - LogDriver=journald (explicit: never fall back to an unbounded k8s-file log).
+#
+# Changes in v0.23.4:
+# - Pass EVI_GITHUB_TOKEN into the worker for GitHub / GHCR access.
+#
+# Changes in v1.7.0:
+#
+# Changes in v1.6.0:
+# - Updated network dependency: network.service -> network-network.service
+#   (Quadlet generates <name>-network.service from <name>.network files).
+#
+# Changes in v1.5.0:
+# - Renamed network dependency: evi-network.service -> network.service.
+#
+# Changes in v1.4.0:
+# - Renamed from evi-worker.container: ContainerName and all inter-container DNS hostnames updated to short names
+#   (db, state, fs instead of evi-db, evi-state, evi-fs).
+#
+# Changes in v1.3.0:
+# - Re-added state (Valkey): worker reads app settings cache from Valkey (same as be).
+#   Set VALKEY_URL/VALKEY_PASSWORD so the container does not default to localhost:6379 (wrong inside the pod).
+#
+# Changes in v1.2.0:
+# - Removed state (Valkey) dependency: worker no longer uses Valkey.
+#   Queue is driven by PostgreSQL Transactional Outbox (LISTEN/NOTIFY + worker_jobs table).
+#
+# Changes in v1.1.0:
+# - Added fs dependency (Wants/After) and FS_* env vars for SeaweedFS S3 connectivity.
+#
+# Changes in v1.0.0:
+# - Initial worker container unit
+#
+
+[Unit]
+Description=worker (Podman)
+Wants=network-online.target
+After=network-online.target
+Requires=network-network.service
+After=network-network.service
+Wants=db.service
+After=db.service
+Wants=state.service
+After=state.service
+Wants=fs.service
+After=fs.service
+
+[Container]
+# Rendered by install.sh (deploy)
+Image={{APP_WORKER_IMAGE}}
+ContainerName=worker
+
+# Explicit: never fall back to an unbounded k8s-file log
+LogDriver=journald
+
+# Internal network only (no PublishPort)
+Network={{APP_NETWORK}}
+
+# Database connectivity
+Environment=DATABASE_URL=postgresql://app_service:{{APP_DB_PASSWORD}}@db:{{APP_DB_PORT}}/{{APP_POSTGRES_DB}}
+
+# Valkey (settings cache; same host/password pattern as be — not localhost inside the container)
+Environment=VALKEY_URL=state:{{APP_VALKEY_PORT}}
+Environment=VALKEY_PASSWORD={{APP_VALKEY_PASSWORD}}
+
+# Logging
+Environment=LOG_LEVEL=info
+Environment=LOG_FORMAT=json
+
+# GitHub access key (install / update / GHCR pull)
+Environment=APP_GITHUB_TOKEN={{APP_GITHUB_TOKEN}}
+Environment=APP_INSTALL_REPO={{APP_INSTALL_REPO}}
+
+# File storage (SeaweedFS S3)
+Environment=FS_S3_ENDPOINT=http://fs:{{APP_FS_S3_PORT}}
+Environment=FS_BUCKET={{APP_FS_BUCKET}}
+Environment=FS_ACCESS_KEY={{APP_FS_ACCESS_KEY}}
+Environment=FS_SECRET_KEY={{APP_FS_SECRET_KEY}}
+
+# Resource limits (optional)
+{{APP_PODMANARGS_LIMITS_WORKER}}
+
+[Service]
+Restart=always
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target

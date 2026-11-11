@@ -1,0 +1,1960 @@
+/* Version: 0.26.3
+ * Purpose: Styles for the admin tools Cockpit package.
+ * Two-panel layout: left navigation sidebar + right content area.
+ * Includes dark theme support via .theme-dark class on <html>, synced from Cockpit shell.
+ * Cockpit package; filename: admin.css
+ *
+ * Changes in v0.26.3:
+ * - Removed full-screen update overlay styles.
+ * - Removed unused Cockpit panel install status styles.
+ * - Phase headings, banners, rules, and status markers in the update log have their own colors, including dark theme.
+ * - Updates section is 880px wide. The version grid is 4 columns, 2 columns under 900px, and 1 column under 640px.
+ * - Beta toggle sits in the version grid. Removed the standalone check row and beta row.
+ *
+ * Changes in v0.26.2:
+ * - De-brand runtime paths, filenames, and user-visible product name to application/app.
+ * - Stylesheet filename is admin.css.
+ *
+ * Changes in v0.24.5:
+ * - Sudo modal version line uses the same PatternFly type and color as the title.
+ * - Check row lays the Check and Refresh buttons in a row with the actions gap.
+ *
+ * Changes in v0.23.10:
+ * - Consumes .accent-* / .inset-table catalog (was .evi-*).
+ *
+ * Changes in v0.23.6:
+ * - Sudo modal: "Sudo password" uses the same heading size/weight/family as
+ *   "Install update…" (Cockpit h3 was overriding the title, so 18px on the
+ *   label still looked smaller).
+ *
+ * Changes in v0.23.5:
+ * - GitHub access key card: header + badge, input row, muted help, error/success msg, dark theme.
+ * - Sudo modal: password label 18px/700, why paragraph, box max-width 480px.
+ *
+ * Changes in v0.21.8:
+ * - .evi-update-release-notes-content: max-height 200px -> 320px (real release notes,
+ *   header + note text, run longer than the old single-line legacy notes).
+ *
+ * Changes in v1.9.0:
+ * - Disk Status section: disk cards with progress bars, critical/warning banners, dark theme.
+ *
+ * Changes in v1.8.0:
+ * - Updates section: appended all evi-update component styles (version card, badges,
+ *   compatibility warning, overlay, releases list, sudo modal, cockpit install status,
+ *   beta toggle, check row, progress, output, release notes) with dark theme overrides.
+ * - .hidden now uses !important to prevent cascade override by component display rules
+ *   (sudo modal's display:flex was overriding .hidden's display:none).
+ *
+ * Changes in v1.7.0:
+ * - DB Tools section: .evi-admin-dbtools-credentials for login hint block (border-top separator).
+ * - .evi-admin-btn-primary applied to <a> tag: text-decoration:none + inline-block display.
+ *
+ * Changes in v1.6.0:
+ * - Added .evi-admin-cert-upload-row and .evi-admin-cert-filename for the custom TLS
+ *   certificate upload control in the Container Environment section.
+ *
+ * Changes in v1.5.0:
+ * - Resource limits grid: switched to CSS grid (3 explicit columns) so CPU and Memory selects
+ *   always render in separate columns.
+ * - .evi-admin-tls-mode-row: flex row for TLS mode select + Regen cert button inline.
+ * - .evi-admin-select-tls-mode: constrained width for TLS select inside the flex row.
+ *
+ * Changes in v1.4.0:
+ * - .evi-admin-version-badge: version label in header, muted/small, baseline-aligned.
+ *
+ * Changes in v1.3.0:
+ * - Container Environment: tooltips, section group titles, domain warning, limits grid, inline selects, modal + diff body
+ *
+ * Changes in v1.2.0:
+ * - Password input group with visibility toggle button (eye icon)
+ * - Backup progress bar (fill, indeterminate animation, step text, dark theme)
+ *
+ * Changes in v1.1.0:
+ * - Added dark theme: html.theme-dark overrides for all CSS custom properties
+ * - Dark variants for status indicators (running, success, error)
+ * - Smooth transition on background-color and color for theme switch
+ */
+
+/* ===== Dark theme: redefine PatternFly CSS custom properties ===== */
+
+html.theme-dark {
+  --pf-v5-global--Color--100: #e0e0e0;
+  --pf-v5-global--Color--200: #a2a5a8;
+  --pf-v5-global--Color--light-100: #ffffff;
+  --pf-v5-global--BackgroundColor--100: #212427;
+  --pf-v5-global--BackgroundColor--200: #1b1d21;
+  --pf-v5-global--BackgroundColor--dark-100: #0f1114;
+  --pf-v5-global--BorderColor--100: #3c3f42;
+  --pf-v5-global--BorderColor--300: #57585a;
+  --pf-v5-global--primary-color--100: #2b9af3;
+  --pf-v5-global--primary-color--200: #06c;
+}
+
+/* ===== Layout ===== */
+
+.admin {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  font-family: var(--pf-v5-global--FontFamily--text, "RedHatText", "Helvetica Neue", Arial, sans-serif);
+  color: var(--pf-v5-global--Color--100, #151515);
+  background: var(--pf-v5-global--BackgroundColor--200, #f0f0f0);
+  transition: background-color 0.2s, color 0.2s;
+}
+
+/* ===== Header ===== */
+
+.admin-header {
+  display: flex;
+  align-items: center;
+  padding: 12px 24px;
+  background: var(--pf-v5-global--BackgroundColor--dark-100, #151515);
+  color: var(--pf-v5-global--Color--light-100, #ffffff);
+  flex-shrink: 0;
+}
+
+.admin-header h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+}
+
+.admin-version-badge {
+  margin-left: 10px;
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.55;
+  letter-spacing: 0;
+  vertical-align: middle;
+}
+
+/* ===== Body (nav + content) ===== */
+
+.admin-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ===== Left Navigation ===== */
+
+.admin-nav {
+  width: 240px;
+  min-width: 240px;
+  background: var(--pf-v5-global--BackgroundColor--100, #ffffff);
+  border-right: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.admin-nav-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px 0;
+}
+
+.admin-nav-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background-color 0.15s, border-color 0.15s;
+  user-select: none;
+}
+
+.admin-nav-item:hover:not(.disabled) {
+  background: var(--pf-v5-global--BackgroundColor--200, #f0f0f0);
+}
+
+.admin-nav-item.active {
+  background: var(--pf-v5-global--BackgroundColor--200, #f0f0f0);
+  border-left-color: var(--pf-v5-global--primary-color--100, #0066cc);
+  font-weight: 600;
+}
+
+.admin-nav-item.disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.admin-nav-icon {
+  font-size: 18px;
+  margin-right: 10px;
+  flex-shrink: 0;
+}
+
+.admin-nav-label {
+  flex: 1;
+  font-size: 14px;
+}
+
+.admin-badge {
+  display: inline-block;
+  width: 100%;
+  margin-top: 4px;
+  margin-left: 28px;
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+  background: var(--pf-v5-global--BackgroundColor--200, #f0f0f0);
+  border-radius: 10px;
+  width: fit-content;
+}
+
+/* ===== Right Content ===== */
+
+.admin-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 32px;
+}
+
+.admin-section {
+  max-width: 720px;
+}
+
+#section-updates.admin-section {
+  max-width: 880px;
+}
+
+.admin-section h2 {
+  margin: 0 0 8px 0;
+  font-size: 22px;
+  font-weight: 400;
+}
+
+.admin-description {
+  margin: 0 0 24px 0;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ===== Visibility helpers ===== */
+
+.hidden {
+  display: none !important;
+}
+
+/* ===== Form ===== */
+
+.admin-form {
+  margin-bottom: 24px;
+}
+
+.admin-form-group {
+  margin-bottom: 16px;
+}
+
+.admin-form-group label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.admin-input,
+.admin-select {
+  display: block;
+  width: 100%;
+  max-width: 480px;
+  padding: 6px 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--pf-v5-global--Color--100, #151515);
+  background: var(--pf-v5-global--BackgroundColor--100, #ffffff);
+  border: 1px solid var(--pf-v5-global--BorderColor--300, #8a8d90);
+  border-radius: 3px;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.admin-input:focus,
+.admin-select:focus {
+  outline: none;
+  border-color: var(--pf-v5-global--primary-color--100, #0066cc);
+  box-shadow: 0 0 0 1px var(--pf-v5-global--primary-color--100, #0066cc);
+}
+
+.admin-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+}
+
+/* Password input with visibility toggle */
+.admin-input-group {
+  position: relative;
+  display: block;
+  max-width: 480px;
+}
+
+.admin-input-group .admin-input {
+  padding-right: 44px;
+}
+
+.admin-btn-toggle-password {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+  cursor: pointer;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-btn-toggle-password:hover {
+  color: var(--pf-v5-global--Color--100, #151515);
+  background: var(--pf-v5-global--BackgroundColor--200, #f0f0f0);
+}
+
+.admin-btn-toggle-password .admin-icon-eye,
+.admin-btn-toggle-password .admin-icon-eye-off {
+  display: block;
+}
+
+.admin-btn-toggle-password .hidden {
+  display: none;
+}
+
+/* Checkbox group */
+.admin-form-group-checkbox label {
+  font-weight: 400;
+}
+
+.admin-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.admin-checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+}
+
+/* ===== Buttons ===== */
+
+.admin-form-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.admin-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background-color 0.15s, opacity 0.15s;
+  user-select: none;
+}
+
+.admin-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.admin-btn-primary {
+  color: #ffffff;
+  background: var(--pf-v5-global--primary-color--100, #0066cc);
+}
+
+.admin-btn-primary:hover:not(:disabled) {
+  background: var(--pf-v5-global--primary-color--200, #004080);
+}
+
+.admin-btn-secondary {
+  color: var(--pf-v5-global--Color--100, #151515);
+  background: var(--pf-v5-global--BackgroundColor--100, #ffffff);
+  border: 1px solid var(--pf-v5-global--BorderColor--300, #8a8d90);
+}
+
+.admin-btn-secondary:hover:not(:disabled) {
+  background: var(--pf-v5-global--BackgroundColor--200, #f0f0f0);
+}
+
+.admin-btn-small {
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+  background: transparent;
+  border: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
+}
+
+.admin-btn-small:hover:not(:disabled) {
+  background: var(--pf-v5-global--BackgroundColor--200, #f0f0f0);
+}
+
+/* ===== Status indicator ===== */
+
+.admin-status {
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border-radius: 3px;
+  font-size: 14px;
+}
+
+.admin-status.status-running {
+  background: #e7f1fa;
+  border-left: 4px solid var(--pf-v5-global--info-color--100, #2b9af3);
+  color: #002952;
+}
+
+.admin-status.status-success {
+  background: #e9f5e9;
+  border-left: 4px solid var(--pf-v5-global--success-color--100, #3e8635);
+  color: #1e4f18;
+}
+
+.admin-status.status-error {
+  background: #fce8e8;
+  border-left: 4px solid var(--pf-v5-global--danger-color--100, #c9190b);
+  color: #7d1007;
+}
+
+/* Dark theme status overrides */
+html.theme-dark .admin-status.status-running {
+  background: #0a2a4d;
+  color: #b8daff;
+}
+
+html.theme-dark .admin-status.status-success {
+  background: #1a3a1a;
+  color: #a3d9a0;
+}
+
+html.theme-dark .admin-status.status-error {
+  background: #3b1010;
+  color: #f5b5b5;
+}
+
+/* ===== Backup progress bar ===== */
+
+.admin-progress-wrapper {
+  margin-bottom: 16px;
+}
+
+.admin-progress-bar {
+  height: 8px;
+  background: var(--pf-v5-global--BackgroundColor--200, #f0f0f0);
+  border: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.admin-progress-fill {
+  height: 100%;
+  min-width: 4px;
+  background: var(--pf-v5-global--primary-color--100, #0066cc);
+  border-radius: 3px;
+  transition: width 0.25s ease-out;
+}
+
+.admin-progress-fill.admin-progress-indeterminate {
+  width: 40% !important;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--pf-v5-global--primary-color--100, #0066cc) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: admin-progress-stripe 1.2s linear infinite;
+}
+
+@keyframes admin-progress-stripe {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.admin-progress-text {
+  font-size: 13px;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+}
+
+html.theme-dark .admin-progress-bar {
+  background: var(--pf-v5-global--BackgroundColor--dark-100, #0f1114);
+  border-color: var(--pf-v5-global--BorderColor--100, #3c3f42);
+}
+
+html.theme-dark .admin-progress-text {
+  color: var(--pf-v5-global--Color--200, #a2a5a8);
+}
+
+/* ===== Output area ===== */
+
+.admin-output-wrapper {
+  margin-top: 24px;
+}
+
+.admin-output-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.admin-output-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.admin-output {
+  width: 100%;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 12px 16px;
+  margin: 0;
+  font-family: var(--pf-v5-global--FontFamily--monospace, "RedHatMono", "Liberation Mono", monospace);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--pf-v5-global--Color--100, #151515);
+  background: var(--pf-v5-global--BackgroundColor--100, #ffffff);
+  border: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
+  border-radius: 3px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  box-sizing: border-box;
+}
+
+/* ===== Placeholder sections (coming soon) ===== */
+
+.admin-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+}
+
+.admin-placeholder-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.4;
+}
+
+.admin-placeholder p {
+  margin: 0 0 8px 0;
+  font-size: 15px;
+}
+
+.admin-placeholder-hint {
+  font-size: 13px;
+  max-width: 400px;
+  line-height: 1.5;
+}
+
+/* ===== Container Environment: tooltips (match app-update pattern) ===== */
+
+.admin-form-label-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.admin-form-label-row label {
+  margin-bottom: 0;
+}
+
+.admin-tooltip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--pf-v5-global--BorderColor--300, #8a8d90);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: help;
+  flex-shrink: 0;
+}
+
+.admin-tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  max-width: min(320px, 70vw);
+  white-space: normal;
+  padding: 6px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.35;
+  background: var(--pf-v5-global--BackgroundColor--dark-100, #151515);
+  color: #ffffff;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 20;
+}
+
+.admin-tooltip:hover::after {
+  opacity: 1;
+}
+
+html.theme-dark .admin-tooltip {
+  background: var(--pf-v5-global--BorderColor--300, #57585a);
+}
+
+html.theme-dark .admin-tooltip::after {
+  background: #e0e0e0;
+  color: #151515;
+}
+
+.admin-section-group-title {
+  margin: 24px 0 12px 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--pf-v5-global--Color--100, #151515);
+  border-bottom: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
+  padding-bottom: 6px;
+}
+
+html.theme-dark .admin-section-group-title {
+  color: var(--pf-v5-global--Color--100, #e0e0e0);
+  border-bottom-color: var(--pf-v5-global--BorderColor--100, #3c3f42);
+}
+
+.admin-domain-warning {
+  margin-top: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #7d6608;
+  background: #fdf7e3;
+  border-left: 4px solid #c5a000;
+  border-radius: 3px;
+}
+
+html.theme-dark .admin-domain-warning {
+  color: #f0e6a6;
+  background: #3d3508;
+  border-left-color: #c5a000;
+}
+
+.admin-limits-intro {
+  margin-top: -8px;
+  margin-bottom: 12px;
+}
+
+.admin-limits-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  width: 100%;
+  max-width: 640px;
+  margin-bottom: 8px;
+}
+
+.admin-limits-row {
+  display: contents;
+}
+
+.admin-limits-row > span,
+.admin-limits-row > select {
+  display: block;
+  vertical-align: middle;
+  padding: 6px 8px 6px 0;
+  border-bottom: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
+}
+
+.admin-limits-header > span {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+  border-bottom: 2px solid var(--pf-v5-global--BorderColor--300, #8a8d90);
+}
+
+.admin-limits-name {
+  font-size: 13px;
+  color: var(--pf-v5-global--Color--100, #151515);
+}
+
+.admin-select-inline {
+  max-width: 140px;
+  width: 100%;
+}
+
+html.theme-dark .admin-limits-row > span,
+html.theme-dark .admin-limits-row > select {
+  border-bottom-color: var(--pf-v5-global--BorderColor--100, #3c3f42);
+}
+
+/* TLS mode row: select + Regen button side by side */
+.admin-tls-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.admin-select-tls-mode {
+  max-width: 180px;
+}
+
+/* ===== Modal (diff confirm) ===== */
+
+.admin-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.admin-modal.hidden {
+  display: none;
+}
+
+.admin-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.admin-modal-box {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 520px;
+  max-height: 85vh;
+  overflow: auto;
+  padding: 20px 24px;
+  background: var(--pf-v5-global--BackgroundColor--100, #ffffff);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+html.theme-dark .admin-modal-box {
+  background: var(--pf-v5-global--BackgroundColor--200, #1b1d21);
+}
+
+.admin-modal-title {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.admin-modal-lead {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+  line-height: 1.45;
+}
+
+.admin-diff-body {
+  margin: 0 0 16px 0;
+  padding: 12px;
+  max-height: 40vh;
+  overflow: auto;
+  font-family: var(--pf-v5-global--FontFamily--monospace, "RedHatMono", monospace);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--pf-v5-global--BackgroundColor--200, #f0f0f0);
+  border: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
+  border-radius: 3px;
+}
+
+html.theme-dark .admin-diff-body {
+  background: var(--pf-v5-global--BackgroundColor--dark-100, #0f1114);
+  border-color: var(--pf-v5-global--BorderColor--100, #3c3f42);
+}
+
+.admin-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* ===== Custom TLS certificate upload ===== */
+
+.admin-cert-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.admin-cert-filename {
+  font-size: 13px;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+  font-family: var(--pf-v5-global--FontFamily--monospace, "RedHatMono", "Liberation Mono", monospace);
+  word-break: break-all;
+}
+
+/* ===== Responsive: narrow viewports ===== */
+
+@media (max-width: 640px) {
+  .admin-body {
+    flex-direction: column;
+  }
+  .admin-nav {
+    width: 100%;
+    min-width: unset;
+    border-right: none;
+    border-bottom: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
+    overflow-y: visible;
+  }
+  .admin-nav-list {
+    display: flex;
+    flex-wrap: wrap;
+    padding: 4px 8px;
+  }
+  .admin-nav-item {
+    border-left: none;
+    border-bottom: 3px solid transparent;
+    padding: 8px 12px;
+  }
+  .admin-nav-item.active {
+    border-left-color: transparent;
+    border-bottom-color: var(--pf-v5-global--primary-color--100, #0066cc);
+  }
+  .admin-badge {
+    margin-left: 8px;
+    margin-top: 0;
+    width: auto;
+  }
+  .admin-content {
+    padding: 16px;
+  }
+}
+
+/* ── DB Tools section ── */
+
+a.admin-btn {
+  text-decoration: none;
+  display: inline-flex;
+}
+
+a.admin-btn:hover {
+  text-decoration: none;
+}
+
+.admin-dbtools-credentials {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+html.theme-dark .admin-dbtools-credentials {
+  border-top-color: var(--pf-v5-global--BorderColor--100, #3c3f42);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Updates section — app-update component styles
+   (embedded from standalone cockpit-app-update panel)
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Version info card ── */
+
+.update-card {
+  background: var(--pf-v5-global--BackgroundColor--100, #ffffff);
+  border: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
+  border-radius: 4px;
+  padding: 20px 24px;
+  margin-bottom: 24px;
+}
+
+.update-version-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px 24px;
+}
+
+.update-version-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.update-version-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+}
+
+.update-version-value {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--pf-v5-global--Color--100, #151515);
+}
+
+.update-version-secondary {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+}
+
+/* ── GitHub access key card ── */
+
+.update-github-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.update-github-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--pf-v5-global--Color--100, #151515);
+}
+
+.update-github-help {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+}
+
+.update-github-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.update-github-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  border: 1px solid var(--pf-v5-global--BorderColor--300, #8a8d90);
+  border-radius: 3px;
+  background: var(--pf-v5-global--BackgroundColor--100, #ffffff);
+  color: var(--pf-v5-global--Color--100, #151515);
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.update-github-input:focus {
+  border-color: var(--pf-v5-global--primary-color--100, #0066cc);
+  box-shadow: 0 0 0 1px var(--pf-v5-global--primary-color--100, #0066cc);
+}
+
+.update-github-row .update-btn {
+  flex-shrink: 0;
+}
+
+.update-github-msg {
+  margin: 10px 0 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.update-github-msg-error {
+  color: #7d1007;
+}
+
+.update-github-msg-success {
+  color: #1e4f18;
+}
+
+.update-github-msg-warning {
+  color: #795600;
+}
+
+html.theme-dark .update-github-title {
+  color: var(--pf-v5-global--Color--100, #e0e0e0);
+}
+
+html.theme-dark .update-github-help {
+  color: var(--pf-v5-global--Color--200, #a2a5a8);
+}
+
+html.theme-dark .update-github-input {
+  background: var(--pf-v5-global--BackgroundColor--200, #1b1d21);
+  border-color: var(--pf-v5-global--BorderColor--300, #57585a);
+  color: var(--pf-v5-global--Color--100, #e0e0e0);
+}
+
+html.theme-dark .update-github-msg-error {
+  color: #f5b5b5;
+}
+
+html.theme-dark .update-github-msg-success {
+  color: #a3d9a0;
+}
+
+html.theme-dark .update-github-msg-warning {
+  color: #f5d680;
+}
+
+/* ── Status badge ── */
+
+.update-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  width: fit-content;
+}
+
+.update-badge-neutral {
+  background: var(--pf-v5-global--BackgroundColor--200, #f0f0f0);
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+}
+
+.update-badge-success {
+  background: #e9f5e9;
+  color: #1e4f18;
+}
+
+.update-badge-warning {
+  background: #fdf7e7;
+  color: #795600;
+}
+
+.update-badge-info {
+  background: #e7f1fa;
+  color: #002952;
+}
+
+.update-badge-active {
+  background: #fce8e8;
+  color: #7d1007;
+}
+
+html.theme-dark .update-badge-success {
+  background: #1a3a1a;
+  color: #a3d9a0;
+}
+
+html.theme-dark .update-badge-warning {
+  background: #3d3000;
+  color: #f5d680;
+}
+
+html.theme-dark .update-badge-info {
+  background: #0a2a4d;
+  color: #b8daff;
+}
+
+html.theme-dark .update-badge-active {
+  background: #3b1010;
+  color: #f5b5b5;
+}
+
+/* ── Compatibility warning ── */
+
+.update-compatibility-warning {
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: #fdf7e7;
+  border-left: 4px solid #795600;
+  color: #795600;
+  border-radius: 3px;
+  font-size: 14px;
+}
+
+html.theme-dark .update-compatibility-warning {
+  background: #3d3000;
+  border-left-color: #f5d680;
+  color: #f5d680;
+}
+
+/* ── Update action buttons ── */
+
+.update-actions {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.update-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background-color 0.15s, opacity 0.15s;
+  user-select: none;
+}
+
+.update-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.update-btn-primary {
+  color: #ffffff;
+  background: var(--pf-v5-global--primary-color--100, #0066cc);
+}
+
+.update-btn-primary:hover:not(:disabled) {
+  background: var(--pf-v5-global--primary-color--200, #004080);
+}
+
+.update-btn-secondary {
+  color: var(--pf-v5-global--Color--100, #151515);
+  background: var(--pf-v5-global--BackgroundColor--100, #ffffff);
+  border: 1px solid var(--pf-v5-global--BorderColor--300, #8a8d90);
+}
+
+.update-btn-secondary:hover:not(:disabled) {
+  background: var(--pf-v5-global--BackgroundColor--200, #f0f0f0);
+}
+
+.update-btn-danger {
+  color: #ffffff;
+  background: #c9190b;
+}
+
+.update-btn-danger:hover:not(:disabled) {
+  background: #a30000;
+}
+
+.update-btn-small {
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+  background: transparent;
+  border: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
+}
+
+.update-btn-small:hover:not(:disabled) {
+  background: var(--pf-v5-global--BackgroundColor--200, #f0f0f0);
+}
+
+/* ── Update status indicator ── */
+
+.update-status {
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border-radius: 3px;
+  font-size: 14px;
+}
+
+.update-status.status-running {
+  background: #e7f1fa;
+  border-left: 4px solid #2b9af3;
+  color: #002952;
+}
+
+.update-status.status-success {
+  background: #e9f5e9;
+  border-left: 4px solid #3e8635;
+  color: #1e4f18;
+}
+
+.update-status.status-error {
+  background: #fce8e8;
+  border-left: 4px solid #c9190b;
+  color: #7d1007;
+}
+
+html.theme-dark .update-status.status-running {
+  background: #0a2a4d;
+  color: #b8daff;
+}
+
+html.theme-dark .update-status.status-success {
+  background: #1a3a1a;
+  color: #a3d9a0;
+}
+
+html.theme-dark .update-status.status-error {
+  background: #3b1010;
+  color: #f5b5b5;
+}
+
+/* ── Update progress bar ── */
+
+.update-progress-wrapper {
+  margin-bottom: 16px;
+}
+
+.update-progress-bar {
+  height: 8px;
+  background: var(--pf-v5-global--BackgroundColor--200, #f0f0f0);
+  border: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.update-progress-fill {
+  height: 100%;
+  min-width: 4px;
+  background: var(--pf-v5-global--primary-color--100, #0066cc);
+  border-radius: 3px;
+  transition: width 0.25s ease-out;
+}
+
+.update-progress-indeterminate {
+  width: 40% !important;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--pf-v5-global--primary-color--100, #0066cc) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: update-progress-stripe 1.2s linear infinite;
+}
+
+@keyframes update-progress-stripe {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.update-progress-text {
+  font-size: 13px;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+}
+
+html.theme-dark .update-progress-bar {
+  background: var(--pf-v5-global--BackgroundColor--dark-100, #0f1114);
+  border-color: var(--pf-v5-global--BorderColor--100, #3c3f42);
+}
+
+html.theme-dark .update-progress-text {
+  color: var(--pf-v5-global--Color--200, #a2a5a8);
+}
+
+/* ── Update output area ── */
+
+.update-output-wrapper {
+  margin-top: 24px;
+}
+
+.update-output-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.update-output-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.update-output {
+  width: 100%;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 12px 16px;
+  margin: 0;
+  font-family: var(--pf-v5-global--FontFamily--monospace, "RedHatMono", "Liberation Mono", monospace);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--pf-v5-global--Color--100, #151515);
+  background: var(--pf-v5-global--BackgroundColor--100, #ffffff);
+  border: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
+  border-radius: 3px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  box-sizing: border-box;
+}
+
+/* Highlighted lines inside the update log. */
+
+.update-log-phase {
+  display: inline-block;
+  margin-top: 6px;
+  font-weight: 700;
+}
+
+.update-log-phase-num {
+  color: #b95c00;
+  font-weight: 700;
+}
+
+.update-log-phase-title {
+  color: #0066cc;
+  font-weight: 700;
+}
+
+.update-log-rule {
+  color: #8a8d90;
+}
+
+.update-log-banner {
+  color: #0066cc;
+  font-weight: 700;
+}
+
+.update-log-ok {
+  color: #2d7623;
+  font-weight: 700;
+}
+
+.update-log-fail {
+  color: #c9190b;
+  font-weight: 700;
+}
+
+.update-log-warn {
+  color: #b95c00;
+  font-weight: 700;
+}
+
+html.theme-dark .update-log-phase-num {
+  color: #f5ab00;
+}
+
+html.theme-dark .update-log-phase-title,
+html.theme-dark .update-log-banner {
+  color: #73bcf7;
+}
+
+html.theme-dark .update-log-rule {
+  color: #57585a;
+}
+
+html.theme-dark .update-log-ok {
+  color: #7cc674;
+}
+
+html.theme-dark .update-log-fail {
+  color: #f56e6e;
+}
+
+html.theme-dark .update-log-warn {
+  color: #f5ab00;
+}
+
+/* ── Release notes ── */
+
+.update-release-notes {
+  margin-top: 24px;
+}
+
+.update-release-notes h3 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.update-release-notes-content {
+  width: 100%;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 12px 16px;
+  margin: 0;
+  font-family: var(--pf-v5-global--FontFamily--text, "RedHatText", "Helvetica Neue", Arial, sans-serif);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+  background: var(--pf-v5-global--BackgroundColor--100, #ffffff);
+  border: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
+  border-radius: 3px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  box-sizing: border-box;
+}
+
+/* ── Beta toggle (inside the version grid) ── */
+
+.update-beta-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+  cursor: pointer;
+  user-select: none;
+}
+
+.update-beta-checkbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--pf-v5-global--primary-color--100, #0066cc);
+}
+
+.update-tooltip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--pf-v5-global--BorderColor--300, #8a8d90);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: help;
+  flex-shrink: 0;
+}
+
+.update-tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  padding: 6px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 400;
+  background: var(--pf-v5-global--BackgroundColor--dark-100, #151515);
+  color: #ffffff;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 10;
+}
+
+.update-tooltip:hover::after {
+  opacity: 1;
+}
+
+html.theme-dark .update-tooltip {
+  background: var(--pf-v5-global--BorderColor--300, #57585a);
+}
+
+html.theme-dark .update-tooltip::after {
+  background: #e0e0e0;
+  color: #151515;
+}
+
+/* ── Available releases list ── */
+
+.update-releases-wrapper {
+  background: var(--pf-v5-global--BackgroundColor--100, #ffffff);
+  border: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
+  border-radius: 4px;
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+
+.update-releases-header {
+  padding: 12px 16px 8px;
+  border-bottom: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
+}
+
+.update-releases-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+}
+
+.update-releases-list {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.update-release-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background-color 0.1s;
+  border-left: 3px solid transparent;
+  user-select: none;
+}
+
+.update-release-item:hover {
+  background: var(--pf-v5-global--BackgroundColor--200, #f0f0f0);
+}
+
+.update-release-item.selected {
+  background: #e7f1fa;
+  border-left-color: var(--pf-v5-global--primary-color--100, #0066cc);
+}
+
+.update-release-item.recommended {
+  background: #e9f5e9;
+  border-left-color: #3e8635;
+}
+
+.update-release-item.recommended.selected {
+  background: #d6effa;
+  border-left-color: var(--pf-v5-global--primary-color--100, #0066cc);
+}
+
+.update-release-item.incompatible {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.update-release-item.incompatible:hover {
+  background: transparent;
+}
+
+.update-release-radio {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: var(--pf-v5-global--primary-color--100, #0066cc);
+}
+
+.update-release-item.incompatible .update-release-radio {
+  cursor: not-allowed;
+}
+
+.update-release-version {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--pf-v5-global--Color--100, #151515);
+  min-width: 80px;
+}
+
+.update-release-min {
+  font-size: 12px;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+  min-width: 90px;
+}
+
+.update-release-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.update-release-badge-ok {
+  background: #e9f5e9;
+  color: #1e4f18;
+}
+
+.update-release-badge-warn {
+  background: #fdf7e7;
+  color: #795600;
+}
+
+.update-release-badge-beta {
+  background: #f0e6ff;
+  color: #5e40a3;
+}
+
+.update-release-badge-recommended {
+  background: #e7f1fa;
+  color: #002952;
+  font-style: italic;
+}
+
+html.theme-dark .update-releases-wrapper {
+  background: var(--pf-v5-global--BackgroundColor--100, #212427);
+  border-color: var(--pf-v5-global--BorderColor--100, #3c3f42);
+}
+
+html.theme-dark .update-releases-header {
+  border-bottom-color: var(--pf-v5-global--BorderColor--100, #3c3f42);
+}
+
+html.theme-dark .update-releases-header h3 {
+  color: var(--pf-v5-global--Color--200, #a2a5a8);
+}
+
+html.theme-dark .update-release-item:hover {
+  background: var(--pf-v5-global--BackgroundColor--200, #1b1d21);
+}
+
+html.theme-dark .update-release-item.selected {
+  background: #0a2a4d;
+  border-left-color: var(--pf-v5-global--primary-color--100, #2b9af3);
+}
+
+html.theme-dark .update-release-item.recommended {
+  background: #1a3a1a;
+  border-left-color: #3e8635;
+}
+
+html.theme-dark .update-release-item.recommended.selected {
+  background: #0a2a4d;
+  border-left-color: var(--pf-v5-global--primary-color--100, #2b9af3);
+}
+
+html.theme-dark .update-release-item.incompatible:hover {
+  background: transparent;
+}
+
+html.theme-dark .update-release-version {
+  color: var(--pf-v5-global--Color--100, #e0e0e0);
+}
+
+html.theme-dark .update-release-min {
+  color: var(--pf-v5-global--Color--200, #a2a5a8);
+}
+
+html.theme-dark .update-release-badge-ok {
+  background: #1a3a1a;
+  color: #a3d9a0;
+}
+
+html.theme-dark .update-release-badge-warn {
+  background: #3d3000;
+  color: #f5d680;
+}
+
+html.theme-dark .update-release-badge-beta {
+  background: #2a1a4d;
+  color: #c4b5e6;
+}
+
+html.theme-dark .update-release-badge-recommended {
+  background: #0a2a4d;
+  color: #b8daff;
+}
+
+/* ── Sudo password modal ── */
+
+.update-sudo-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.update-sudo-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.update-sudo-box {
+  position: relative;
+  background: var(--pf-v5-global--BackgroundColor--100, #ffffff);
+  border: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
+  border-radius: 4px;
+  padding: 28px 32px;
+  max-width: 480px;
+  width: 100%;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.18);
+}
+
+.update-sudo-box .update-sudo-title,
+.update-sudo-box .update-sudo-label,
+.update-sudo-box .update-sudo-version {
+  font-family: var(--pf-v5-global--FontFamily--heading, inherit);
+  font-size: var(--pf-v5-global--FontSize--xl, 1.25rem);
+  font-weight: var(--pf-v5-global--FontWeight--bold, 700);
+  line-height: 1.3;
+  color: var(--pf-v5-global--Color--100, #151515);
+}
+
+.update-sudo-title,
+.update-sudo-version {
+  margin: 0 0 8px 0;
+}
+
+.update-sudo-what {
+  margin: 0 0 12px 0;
+  padding: 0 0 0 20px;
+  font-size: 14px;
+  color: var(--pf-v5-global--Color--100, #151515);
+  line-height: 1.7;
+}
+
+.update-sudo-note {
+  margin: 0 0 16px 0;
+  font-size: 13px;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+  line-height: 1.5;
+}
+
+.update-sudo-why {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--pf-v5-global--Color--100, #151515);
+}
+
+.update-sudo-label {
+  display: block;
+  margin: 0 0 6px 0;
+}
+
+.update-sudo-error {
+  margin: 0 0 12px 0;
+  padding: 8px 12px;
+  background: #fce8e8;
+  border-left: 3px solid #c9190b;
+  color: #7d1007;
+  font-size: 13px;
+  border-radius: 3px;
+}
+
+html.theme-dark .update-sudo-error {
+  background: #3b1010;
+  color: #f5b5b5;
+}
+
+.update-sudo-input {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 14px;
+  border: 1px solid var(--pf-v5-global--BorderColor--300, #8a8d90);
+  border-radius: 3px;
+  background: var(--pf-v5-global--BackgroundColor--100, #ffffff);
+  color: var(--pf-v5-global--Color--100, #151515);
+  margin-bottom: 8px;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.update-sudo-input:focus {
+  border-color: var(--pf-v5-global--primary-color--100, #0066cc);
+}
+
+.update-sudo-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+html.theme-dark .update-sudo-box {
+  background: var(--pf-v5-global--BackgroundColor--100, #212427);
+  border-color: var(--pf-v5-global--BorderColor--100, #3c3f42);
+}
+
+html.theme-dark .update-sudo-box .update-sudo-title,
+html.theme-dark .update-sudo-box .update-sudo-label,
+html.theme-dark .update-sudo-box .update-sudo-version {
+  color: var(--pf-v5-global--Color--100, #e0e0e0);
+}
+
+html.theme-dark .update-sudo-why {
+  color: var(--pf-v5-global--Color--100, #e0e0e0);
+}
+
+html.theme-dark .update-sudo-input {
+  background: var(--pf-v5-global--BackgroundColor--200, #1b1d21);
+  border-color: var(--pf-v5-global--BorderColor--300, #57585a);
+  color: var(--pf-v5-global--Color--100, #e0e0e0);
+}
+
+/* ── Updates section responsive ── */
+
+@media (max-width: 900px) {
+  .update-version-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .update-version-grid {
+    grid-template-columns: 1fr;
+  }
+  .update-actions {
+    flex-direction: column;
+  }
+  .update-btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .update-release-item {
+    gap: 8px;
+    padding: 10px 12px;
+    flex-wrap: wrap;
+  }
+  .update-release-version {
+    min-width: 60px;
+  }
+  .update-release-min {
+    min-width: auto;
+  }
+  .update-github-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .update-github-input {
+    width: 100%;
+  }
+}
+
+/* =====================================================================
+ * Disk Status section
+ * ===================================================================== */
+
+.admin-disk-banner {
+  padding: 12px 16px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.admin-disk-banner-critical {
+  background: #fce4e4;
+  border: 1px solid #c9190b;
+  color: #7d1007;
+}
+
+.admin-disk-banner-warning {
+  background: #fef3cd;
+  border: 1px solid #f0ab00;
+  color: #795600;
+}
+
+html.theme-dark .admin-disk-banner-critical {
+  background: #3b0d0d;
+  border-color: #c9190b;
+  color: #fe8f8f;
+}
+
+html.theme-dark .admin-disk-banner-warning {
+  background: #3b2e00;
+  border-color: #f0ab00;
+  color: #f5d67a;
+}
+
+.admin-disk-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.admin-disk-card {
+  background: var(--pf-v5-global--BackgroundColor--100, #fff);
+  border: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+
+html.theme-dark .admin-disk-card {
+  background: var(--pf-v5-global--BackgroundColor--100, #212427);
+  border-color: var(--pf-v5-global--BorderColor--100, #3c3f42);
+}
+
+.admin-disk-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 4px 0;
+  color: var(--pf-v5-global--Color--100, #151515);
+}
+
+html.theme-dark .admin-disk-card-title {
+  color: var(--pf-v5-global--Color--100, #e0e0e0);
+}
+
+.admin-disk-card-path {
+  font-size: 12px;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+  margin: 0 0 12px 0;
+  font-family: var(--pf-v5-global--FontFamily--monospace, "RedHatMono", "Liberation Mono", monospace);
+}
+
+.admin-disk-bar-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.admin-disk-bar-track {
+  flex: 1;
+  height: 16px;
+  background: var(--pf-v5-global--BackgroundColor--200, #f0f0f0);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+html.theme-dark .admin-disk-bar-track {
+  background: var(--pf-v5-global--BackgroundColor--dark-100, #0f1114);
+}
+
+.admin-disk-bar-fill {
+  height: 100%;
+  border-radius: 8px;
+  transition: width 0.3s ease;
+  background: #06c;
+}
+
+.admin-disk-bar-fill.disk-warn {
+  background: #f0ab00;
+}
+
+.admin-disk-bar-fill.disk-crit {
+  background: #c9190b;
+}
+
+.admin-disk-bar-pct {
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 40px;
+  text-align: right;
+  color: var(--pf-v5-global--Color--100, #151515);
+}
+
+html.theme-dark .admin-disk-bar-pct {
+  color: var(--pf-v5-global--Color--100, #e0e0e0);
+}
+
+.admin-disk-details {
+  font-size: 13px;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+}
+
+html.theme-dark .admin-disk-details {
+  color: var(--pf-v5-global--Color--200, #c9c9c9);
+}

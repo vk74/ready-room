@@ -1,0 +1,135 @@
+# Version: 0.26.2
+# Purpose: Podman Quadlet container unit for evi backend API.
+# Deployment file: be.container
+# Logic: Runs backend only on internal network; exposed externally via reverse-proxy (Caddy) as /api over HTTPS.
+#
+# Changes in v0.26.2:
+# - Rename EVI_* configuration keys and template placeholders to APP_* (EVI_APP_DB_PASSWORD becomes APP_DB_PASSWORD).
+# 
+# Changes in v0.25.4:
+# - Removed product name prefix from [Unit] Description.
+#
+# Changes in v0.23.12:
+# - LogDriver=journald (explicit: never fall back to an unbounded k8s-file log).
+# - Environment LOG_LEVEL=info and LOG_FORMAT=json (mirrors worker; backend reads both).
+#
+# Changes in v1.11.2:
+# - H7 hardening: NoNewPrivileges=true (the process can never gain privileges via setuid).
+#   Complements the non-root USER now baked into back/Containerfile.
+#
+# Changes in v1.11.1:
+# - Fixed CORS env var name: inject CORS_ALLOWED_ORIGINS (the var the Go backend reads)
+#   from EVI_CORS_ORIGINS. Previously set EVI_CORS_ORIGINS, which the app ignored, so
+#   prod CORS silently fell back to the localhost default.
+#
+# Changes in v1.11.0:
+# - Added TRUSTED_PROXY_CIDRS env (from EVI_TRUSTED_PROXY_CIDRS): the internal proxy
+#   CIDR(s) the backend trusts when reading X-Forwarded-For to derive the real client
+#   IP for per-IP rate limiting.
+#
+# Changes in v1.10.0:
+#
+# Changes in v1.9.0:
+# - Updated network dependency: network.service -> network-network.service
+#   (Quadlet generates <name>-network.service from <name>.network files).
+#
+# Changes in v1.8.0:
+# - Renamed network dependency: evi-network.service -> network.service.
+#
+# Changes in v1.7.0:
+# - Renamed from evi-be.container: ContainerName and all inter-container DNS hostnames updated to short names
+#   (db, state, fs instead of evi-db, evi-state, evi-fs).
+#
+# Changes in v1.6.0:
+# - FS_S3_PUBLIC_BASE uses https://{{EVI_DOMAIN}}/objects (Caddy routes /objects/* to SeaweedFS; /assets/* is Vite SPA bundles).
+#
+# Changes in v1.5.0:
+# - Added fs dependency (Wants/After) and FS_* env vars for SeaweedFS S3 connectivity.
+#
+# Changes in v1.4.0:
+# - Set DATABASE_URL so backend uses db:5432 instead of default localhost:5445 (backend reads only DATABASE_URL).
+#
+# Changes in v1.3.0:
+# - Removed NODE_ENV (Go backend does not use it)
+#
+# Changes in v1.2.0:
+# - Added state dependency (Wants/After) and VALKEY_URL for Valkey connectivity
+#
+# Changes in v1.1.0:
+# - Backend starts after DB (After=db.service, Wants=db.service) so container is created only when DB exists
+#
+# Changes in v1.0.0:
+# - Initial backend container unit (no host port, JWT key mounted via podman secret)
+#
+
+[Unit]
+Description=backend (Podman)
+Wants=network-online.target
+After=network-online.target
+Requires=network-network.service
+After=network-network.service
+Wants=db.service
+After=db.service
+Wants=state.service
+After=state.service
+Wants=fs.service
+After=fs.service
+
+[Container]
+# Rendered by install.sh (deploy)
+Image={{APP_BE_IMAGE}}
+ContainerName=be
+
+# Explicit: never fall back to an unbounded k8s-file log
+LogDriver=journald
+
+# Security hardening: never allow the process to gain new privileges (setuid, etc.).
+# The image itself runs as a non-root user (see back/Containerfile).
+NoNewPrivileges=true
+
+# Internal network
+Network={{APP_NETWORK}}
+
+# Environment (DB connectivity). Backend uses DATABASE_URL; PGHOST/PGPORT kept for compatibility.
+Environment=API_PORT={{APP_BE_PORT}}
+Environment=DATABASE_URL=postgresql://app_service:{{APP_DB_PASSWORD}}@db:{{APP_DB_PORT}}/{{APP_POSTGRES_DB}}
+Environment=PGHOST=db
+Environment=PGPORT={{APP_DB_PORT}}
+Environment=PGDATABASE={{APP_POSTGRES_DB}}
+Environment=PGUSER=app_service
+Environment=PGPASSWORD={{APP_DB_PASSWORD}}
+
+# Logging (prod: structured JSON at info; mirrors worker)
+Environment=LOG_LEVEL=info
+Environment=LOG_FORMAT=json
+
+# CORS (must include https://<domain>). The backend reads CORS_ALLOWED_ORIGINS;
+# the deploy value comes from APP_CORS_ORIGINS.
+Environment=CORS_ALLOWED_ORIGINS={{APP_CORS_ORIGINS}}
+
+# Trusted internal reverse-proxy CIDR(s) for real client-IP extraction (rate limiting)
+Environment=TRUSTED_PROXY_CIDRS={{APP_TRUSTED_PROXY_CIDRS}}
+
+# Valkey (state) for task queues and settings cache
+Environment=VALKEY_URL=redis://:{{APP_VALKEY_PASSWORD}}@state:{{APP_VALKEY_PORT}}
+
+# JWT private key from Podman secret mounted as file
+PodmanArgs=--secret={{APP_JWT_SECRET_NAME}},type=mount,target=/run/secrets/{{APP_JWT_SECRET_NAME}}
+Environment=JWT_PRIVATE_KEY_PATH=/run/secrets/{{APP_JWT_SECRET_NAME}}
+
+# File storage (SeaweedFS S3)
+Environment=FS_S3_ENDPOINT=http://fs:{{APP_FS_S3_PORT}}
+Environment=FS_S3_PUBLIC_BASE=https://{{APP_DOMAIN}}/objects
+Environment=FS_BUCKET={{APP_FS_BUCKET}}
+Environment=FS_ACCESS_KEY={{APP_FS_ACCESS_KEY}}
+Environment=FS_SECRET_KEY={{APP_FS_SECRET_KEY}}
+
+# Resource limits (optional)
+{{APP_PODMANARGS_LIMITS_BE}}
+
+[Service]
+Restart=always
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target

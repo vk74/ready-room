@@ -1,0 +1,23 @@
+# Version: 0.26.2
+# Purpose: Podman Quadlet volume for state store (Valkey) data persistence.
+# Deployment file: state.volume
+# Logic: Creates a named volume used by the state container for AOF.
+#        When APP_DATA_PATH is set, bind-mounts from the external data directory
+#        via {{APP_DATA_VOLUME_OPTIONS_STATE}} (Driver=local, Options=type=none,...).
+#
+# Changes in v0.26.2:
+# - Rename EVI_* configuration keys and template placeholders to APP_* (EVI_APP_DB_PASSWORD becomes APP_DB_PASSWORD).
+# 
+# Changes in v0.25.4:
+# - Removed product name prefix from [Unit] Description.
+#
+# Changes in v1.0.0:
+# - Initial state volume definition (replaces diskless Tmpfs=/data on the state container).
+#
+
+[Unit]
+Description=state volume (Podman)
+
+[Volume]
+VolumeName=state_data
+{{APP_DATA_VOLUME_OPTIONS_STATE}}

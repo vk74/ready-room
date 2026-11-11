@@ -1,0 +1,22 @@
+# Version: 0.26.3
+# Purpose: Systemd user service for disk space monitoring.
+# Deployment file: disk-monitor.service
+# Logic: Runs check-disk-space.sh to check disk usage and log warnings.
+#        {{DEPLOYMENT_DIR}} is replaced by install.sh with the actual path.
+#
+# Changes in v0.26.3:
+# - ExecStart runs scripts/admin/check-disk-space.sh.
+#
+# Changes in v1.1.0:
+# - Renamed from evi-disk-monitor.service to disk-monitor.service.
+#
+# Changes in v1.0.0:
+# - Initial version.
+#
+
+[Unit]
+Description=disk space monitor
+
+[Service]
+Type=oneshot
+ExecStart={{DEPLOYMENT_DIR}}/scripts/admin/check-disk-space.sh {{DEPLOYMENT_DIR}}

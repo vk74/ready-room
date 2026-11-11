@@ -1,0 +1,55 @@
+# Version: 0.26.2
+# Purpose: Podman Quadlet container unit for evi frontend (SPA static files).
+# Deployment file: fe.container
+# Logic: Runs frontend on internal network only; exposed externally via reverse-proxy (Caddy) over HTTPS.
+#
+# Changes in v0.26.2:
+# - Rename EVI_* configuration keys and template placeholders to APP_* (EVI_APP_DB_PASSWORD becomes APP_DB_PASSWORD).
+# 
+# Changes in v0.25.4:
+# - Removed product name prefix from [Unit] Description.
+#
+# Changes in v0.23.12:
+# - LogDriver=journald (explicit: never fall back to an unbounded k8s-file log).
+#
+# Changes in v1.3.0:
+# - Updated network dependency: network.service -> network-network.service
+#   (Quadlet generates <name>-network.service from <name>.network files).
+#
+# Changes in v1.2.0:
+# - Renamed network dependency: evi-network.service -> network.service.
+#
+# Changes in v1.1.0:
+# - Renamed from evi-fe.container: ContainerName updated to short name.
+#
+# Changes in v1.0.0:
+# - Initial frontend container unit (no host port)
+#
+
+[Unit]
+Description=frontend (Podman)
+Wants=network-online.target
+After=network-online.target
+Requires=network-network.service
+After=network-network.service
+
+[Container]
+# Rendered by install.sh (deploy)
+Image={{APP_FE_IMAGE}}
+ContainerName=fe
+
+# Explicit: never fall back to an unbounded k8s-file log
+LogDriver=journald
+
+# Internal network
+Network={{APP_NETWORK}}
+
+# Resource limits (optional)
+{{APP_PODMANARGS_LIMITS_FE}}
+
+[Service]
+Restart=always
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target

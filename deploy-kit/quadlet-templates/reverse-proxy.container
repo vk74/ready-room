@@ -1,0 +1,82 @@
+# Version: 0.26.2
+# Purpose: Podman Quadlet container unit for evi reverse proxy (Caddy).
+# Deployment file: reverse-proxy.container
+# Logic: Terminates TLS on host 80/443 and routes / -> fe, /api -> be.
+#
+# Changes in v0.26.2:
+# - Rename EVI_* configuration keys and template placeholders to APP_* (EVI_APP_DB_PASSWORD becomes APP_DB_PASSWORD).
+# 
+# Changes in v0.25.4:
+# - Removed product name prefix from [Unit] Description.
+#
+# Changes in v0.23.12:
+# - LogDriver=journald (explicit: never fall back to an unbounded k8s-file log).
+#
+# Changes in v1.7.0:
+# - Updated network dependency: network.service -> network-network.service
+#   (Quadlet generates <name>-network.service from <name>.network files).
+#
+# Changes in v1.6.0:
+# - Renamed network dependency: evi-network.service -> network.service.
+#
+# Changes in v1.5.0:
+# - Renamed Caddy volume names from evi_caddy_data/evi_caddy_config to caddy_data/caddy_config.
+#
+# Changes in v1.4.0:
+# - Renamed from evi-reverse-proxy.container: ContainerName updated to short name.
+#
+# Changes in v1.3.0:
+# - Fixed network binding: replaced PublishPort with PodmanArgs --publish 0.0.0.0:PORT:PORT
+# - Ensures ports listen on all interfaces (0.0.0.0) for external access
+# - Makes configuration explicit and reliable across Podman versions
+#
+# Changes in v1.2.0:
+# - Renamed from evi-proxy to evi-reverse-proxy for consistency.
+#
+# Changes in v1.1.0:
+# - Renamed from evi-reverse-proxy to evi-proxy for consistency.
+#
+# Changes in v1.0.0:
+# - Initial Caddy proxy container (single ingress point)
+#
+
+[Unit]
+Description=reverse proxy (Caddy) (Podman)
+Wants=network-online.target
+After=network-online.target
+Requires=network-network.service
+After=network-network.service
+
+[Container]
+# Rendered by install.sh (deploy)
+Image={{APP_PROXY_IMAGE}}
+ContainerName=reverse-proxy
+
+# Explicit: never fall back to an unbounded k8s-file log
+LogDriver=journald
+
+# Internal network (so it can reach fe and be by container name)
+Network={{APP_NETWORK}}
+
+# Publish host ports on all interfaces (0.0.0.0) for external access
+# Note: PublishPort in Quadlet doesn't support IP binding, using PodmanArgs instead
+PodmanArgs=--publish 0.0.0.0:{{APP_HTTP_PORT}}:80
+PodmanArgs=--publish 0.0.0.0:{{APP_HTTPS_PORT}}:443
+
+# Caddy configuration and state
+Volume={{APP_STATE_DIR}}/reverse-proxy/Caddyfile:/etc/caddy/Caddyfile:ro,Z
+Volume=caddy_data:/data:Z
+Volume=caddy_config:/config:Z
+
+# Optional: manual TLS cert/key mounted as read-only files when enabled by install.sh (deploy)
+{{APP_PROXY_TLS_MOUNTS}}
+
+# Resource limits (optional)
+{{APP_PODMANARGS_LIMITS_PROXY}}
+
+[Service]
+Restart=always
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target

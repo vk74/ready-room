@@ -1,0 +1,23 @@
+# Version: 1.1.0
+# Purpose: Systemd user timer that triggers disk space monitoring every hour.
+# Deployment file: disk-monitor.timer
+# Logic: Fires disk-monitor.service hourly with a random delay up to 5 minutes
+#        to avoid thundering herd on multi-instance servers.
+#
+# Changes in v1.1.0:
+# - Renamed from evi-disk-monitor.timer to disk-monitor.timer.
+#
+# Changes in v1.0.0:
+# - Initial version.
+#
+
+[Unit]
+Description=disk space monitor timer
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

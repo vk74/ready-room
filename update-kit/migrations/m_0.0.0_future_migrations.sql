@@ -1,0 +1,103 @@
+-- Version: 1.6.0
+-- Description: Placeholder and instructions for future schema migrations.
+-- Backend file: m_0.0.0_future_migrations.sql
+--
+-- Changes in v1.6.0:
+-- - Renamed from m_1_future_migrations.sql; naming convention is now m_<X.Y.Z>_<description>.sql
+--   where X.Y.Z is the base version of the release that first ships the migration (no
+--   pre-release suffixes like -beta1/-rc1 in file names, ever).
+-- - Legacy integer-numbered migrations (m_2..m_16) removed from the kit: all installations
+--   are on 0.21.7+; updateCompatibility.minVersion is raised to 0.21.7 accordingly.
+-- - Execution order: semantic version sort by X.Y.Z in run-migrations.sh.
+-- - Documented the release/migration lifecycle: schema changes ship in beta/rc releases,
+--   each release with a new migration must increment the base version, and every stable
+--   release carries an auto-generated version-stamp migration (created by release.sh PREPARE).
+--
+-- Changes in v1.5.0:
+-- - Documented app.schema_migrations audit columns and set_migration_output_summary for m_17+.
+-- - Rule: never append DDL to a shipped migration file; add a new m_<N+1>_ repair migration instead.
+--
+-- Changes in v1.4.0:
+-- - Renamed from m_001_future_migrations.sql; naming convention is m_<N>_ (no fixed width).
+-- - Execution order: numeric sort by <N> in run-migrations.sh (m_2 before m_10).
+--
+-- Changes in v1.3.0:
+-- - update/migrations/ is now the SINGLE SOURCE OF TRUTH for migration files
+-- - db/migrations/ removed; developers create migration files directly here
+-- - Updated developer workflow to reflect consolidated directory
+--
+-- Changes in v1.2.0:
+-- - Moved from deploy/db/migrations/ to update/migrations/ (separate update kit).
+-- - Added run-migrations.sh integration note.
+--
+-- Changes in v1.1.1:
+-- - Removed deployed_by from app.instance UPDATE examples (column dropped from schema).
+--
+-- Changes in v1.1.0:
+-- - All comments in English (file-versioning-comments skill).
+-- - Added IMPORTANT block: every migration must increment schema version and update app.instance.
+--
+-- Changes in v1.0.0:
+-- - Initial placeholder for future migrations.
+--
+-- ---------------------------------------------------------------------------
+-- NAMING CONVENTION: m_<X.Y.Z>_short_description.sql
+--   X.Y.Z = base version of the release that first ships this migration.
+--   NEVER include pre-release suffixes (-beta1, -rc1) in migration file names.
+--   Example: m_0.21.8_service_model_and_migration_audit.sql
+--   Execution order: semantic version sort by X.Y.Z in run-migrations.sh.
+--   This placeholder (m_0.0.0) is skipped by name and never executed.
+--
+-- RELEASE / MIGRATION LIFECYCLE:
+--   1. Schema changes are developed and shipped in beta/rc releases. The migration file is
+--      named after the base version of that release (0.21.8-beta1 ships m_0.21.8_*.sql).
+--   2. The base version STRICTLY INCREMENTS with every release. A release that ships a new
+--      migration file MUST have a new base version (a schema fix after 0.21.8-beta1 goes to
+--      0.21.9-* as m_0.21.9_*.sql — never appended to the shipped m_0.21.8 file).
+--   3. A stable release creates NO new hand-written migration. release.sh PREPARE
+--      auto-generates a version-stamp migration m_<stable_version>_stable_stamp.sql
+--      (schema_version bump + output summary only), so schema_version always equals the
+--      app version on stable installations, and the stable kit carries every migration
+--      validated during the beta/rc cycle.
+--
+-- IMPORTANT: All migration scripts MUST:
+-- 1. Set schema_version to the migration's own base version X.Y.Z (strictly greater than
+--    the previous migration) by executing:
+--    UPDATE app.instance
+--    SET schema_version = 'X.Y.Z', last_updated_at = NOW()
+--    WHERE id = 1;
+--    The version in the file name and the schema_version inside the file MUST match.
+-- 2. On success, record a summary for troubleshooting:
+--    PERFORM app.set_migration_output_summary('m_<X.Y.Z>', 'Brief summary of changes');
+--    run-migrations.sh also records checksum, status, errors in app.schema_migrations.
+-- 3. NEVER append DDL to a migration file that shipped in any release (including beta/rc).
+--    Add a new m_<next_version>_*.sql instead (checksum re-apply handles drift).
+-- ---------------------------------------------------------------------------
+--
+-- Developer workflow for schema changes:
+-- 1. Create a new migration file here: update/migrations/m_<X.Y.Z>_<description>.sql
+--    where X.Y.Z is the base version of the NEXT release (strict increment).
+-- 2. Also update db/init/ scripts to reflect the latest schema (golden master).
+--    This ensures new installs get the latest schema without running migrations.
+-- 3. Test the migration on a copy of the data.
+-- 4. Rebuild the db container image (includes updated db/init/ golden master).
+--
+-- Example migration structure:
+-- -- Version: 1.0.0
+-- -- Description: Add new table for feature X
+-- -- Backend file: m_0.22.0_add_feature_x.sql
+-- --
+-- -- Changes in v1.0.0:
+-- -- - Add app.new_table for feature X
+--
+-- CREATE TABLE IF NOT EXISTS app.new_table (
+--     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+--     name VARCHAR(100) NOT NULL,
+--     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+-- );
+--
+-- PERFORM app.set_migration_output_summary('m_0.22.0', 'Created app.new_table');
+--
+-- UPDATE app.instance
+-- SET schema_version = '0.22.0', last_updated_at = NOW()
+-- WHERE id = 1;

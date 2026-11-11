@@ -1,0 +1,43 @@
+# Version: 0.26.2
+# Purpose: Podman Quadlet network definition for evi internal communication.
+# Deployment file: network.network
+# Logic: Defines an isolated bridge network used by evi containers (proxy/fe/be/db).
+#        Quadlet generates systemd unit named network-network.service from this file.
+#        All containers depend on network-network.service (not network.service).
+#
+# Changes in v0.26.2:
+# - Rename EVI_* configuration keys and template placeholders to APP_* (EVI_APP_DB_PASSWORD becomes APP_DB_PASSWORD).
+# 
+# Changes in v0.25.4:
+# - Removed product name prefix from [Unit] Description.
+#
+# Changes in v1.4.0:
+# - Pinned Subnet/Gateway (rendered by install.sh) so the internal network CIDR is
+#   deterministic. The backend trusts exactly this CIDR (TRUSTED_PROXY_CIDRS) when
+#   deriving the real client IP from X-Forwarded-For behind the reverse proxy.
+#
+# Changes in v1.3.0:
+# - Corrected: Quadlet generates network-network.service (not network.service) from network.network.
+#   Updated all .container files to Requires/After=network-network.service accordingly.
+#
+# Changes in v1.2.0:
+# - Renamed file from 'network' to 'network.network': Podman Quadlet requires the .network
+#   extension to recognise the file as a network unit.
+#
+# Changes in v1.1.0:
+# - Renamed from evi.network to network (quadlet file).
+#
+
+[Unit]
+Description=internal network (Podman)
+
+[Network]
+# Rendered by install.sh (deploy)
+NetworkName={{APP_NETWORK}}
+
+# Pinned subnet/gateway so the internal CIDR is deterministic and matches
+# TRUSTED_PROXY_CIDRS passed to the backend for client-IP extraction.
+Subnet={{APP_NETWORK_SUBNET}}
+Gateway={{APP_NETWORK_GATEWAY}}
+
+

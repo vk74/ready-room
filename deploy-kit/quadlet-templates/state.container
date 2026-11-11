@@ -1,0 +1,72 @@
+# Version: 0.26.2
+# Purpose: Podman Quadlet container unit for state store (Valkey in-memory store).
+# Deployment file: state.container
+# Logic: Runs Valkey on internal network only (no host port). Persistent: /data is
+#       the named volume state_data (AOF). Password from Podman secret (mount),
+#       not in process args or env.
+#
+# Changes in v0.26.2:
+# - Rename EVI_* configuration keys and template placeholders to APP_* (EVI_APP_DB_PASSWORD becomes APP_DB_PASSWORD).
+# 
+# Changes in v0.25.4:
+# - Removed product name prefix from [Unit] Description.
+#
+# Changes in v0.23.12:
+# - LogDriver=journald (explicit: never fall back to an unbounded k8s-file log).
+#
+# Changes in v1.5.0:
+# - Replaced diskless Tmpfs=/data with Volume=state_data:/data:Z.
+# - Added state-volume.service to Requires= and After= (mirrors db.container).
+#
+# Changes in v1.4.0:
+# - Updated network dependency: network.service -> network-network.service
+#   (Quadlet generates <name>-network.service from <name>.network files).
+#
+# Changes in v1.3.0:
+# - Renamed network dependency: evi-network.service -> network.service.
+#
+# Changes in v1.2.0:
+# - Renamed from evi-state.container: ContainerName updated to short name.
+#
+# Changes in v1.1.0:
+# - Diskless: /data is tmpfs, no volume, no state-volume.service dependency
+#
+# Changes in v1.0.0:
+# - Initial state container (task queues, settings cache)
+#
+
+[Unit]
+Description=state store Valkey (Podman)
+Wants=network-online.target
+After=network-online.target
+Requires=network-network.service state-volume.service
+After=network-network.service state-volume.service
+
+[Container]
+# Rendered by install.sh (deploy)
+Image={{APP_STATE_IMAGE}}
+ContainerName=state
+
+# Explicit: never fall back to an unbounded k8s-file log
+LogDriver=journald
+
+# Internal network only (no PublishPort)
+Network={{APP_NETWORK}}
+
+# Config from state dir; /data is a named volume (AOF persistence)
+Volume={{APP_STATE_DIR}}/valkey/valkey.conf:/etc/valkey/valkey.conf:ro,Z
+Volume=state_data:/data:Z
+
+# Password from Podman secret (file mount); written to temp config and included so it never appears in ps/env
+PodmanArgs=--secret={{APP_VALKEY_SECRET_NAME}},type=mount,target=/run/secrets/valkey_password
+Exec=/bin/sh -c "printf 'requirepass %%s\n' \"$(cat /run/secrets/valkey_password)\" > /tmp/valkey-auth.conf && exec valkey-server /etc/valkey/valkey.conf --include /tmp/valkey-auth.conf"
+
+# Resource limits (optional)
+{{APP_PODMANARGS_LIMITS_STATE}}
+
+[Service]
+Restart=always
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

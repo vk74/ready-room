@@ -1,0 +1,32 @@
+# Local secrets and generated files (do NOT commit these)
+env/evi.env
+env/evi.secrets.env
+env/app.env
+env/app.secrets.env
+env/tls/
+
+# IDE files
+.vscode/
+.idea/
+.cursor/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.sw?
+*.swp
+*.swo
+*~
+
+# Logs
+*.log

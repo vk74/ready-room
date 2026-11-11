@@ -1,0 +1,82 @@
+# Version: 0.26.2
+# Purpose: Podman Quadlet container unit for evi PostgreSQL database.
+# Deployment file: db.container
+# Logic: Runs DB on the internal network only (no host port published).
+#
+# Changes in v0.26.2:
+# - Pass APP_DB_PASSWORD, APP_ADMIN_DB_USERNAME, and APP_ADMIN_DB_PASSWORD into the db container.
+# 
+# Changes in v0.25.4:
+# - Removed product name prefix from [Unit] Description.
+#
+# Changes in v0.23.12:
+# - LogDriver=journald (explicit: never fall back to an unbounded k8s-file log).
+#
+# Changes in v1.4.0:
+# - Updated network dependency: network.service -> network-network.service.
+#   Podman Quadlet generates <name>-network.service from <name>.network files.
+#
+# Changes in v1.3.0:
+# - Renamed network dependency: evi-network.service -> network.service.
+#
+# Changes in v1.2.0:
+# - Renamed volume mount from evi_db_data to db_data.
+#
+# Changes in v1.1.0:
+# - Renamed from evi-db.container: ContainerName and systemd unit dependencies updated to short names.
+#
+# Changes in v1.0.2:
+# - Volume mount changed from /var/lib/postgresql/data to /var/lib/postgresql for PG 18+ compatibility
+#
+# Changes in v1.0.1:
+# - Fixed healthcheck to use explicit postgres user (fixes "role root does not exist" errors)
+# - Added EVI_ADMIN_DB_USERNAME environment variable for configurable admin username
+#
+# Changes in v1.0.0:
+# - Initial DB container unit (internal-only, persistent volume)
+#
+
+[Unit]
+Description=database (Podman)
+Wants=network-online.target
+After=network-online.target
+Requires=network-network.service db-volume.service
+After=network-network.service db-volume.service
+
+[Container]
+# Rendered by install.sh (deploy)
+Image={{APP_DB_IMAGE}}
+ContainerName=db
+
+# Explicit: never fall back to an unbounded k8s-file log
+LogDriver=journald
+
+# Internal network
+Network={{APP_NETWORK}}
+
+# Persistent data volume (PG 18+ uses /var/lib/postgresql/18/main internally)
+Volume=db_data:/var/lib/postgresql:Z
+
+# Environment
+Environment=POSTGRES_PASSWORD={{APP_POSTGRES_PASSWORD}}
+Environment=POSTGRES_DB={{APP_POSTGRES_DB}}
+Environment=APP_DB_PASSWORD={{APP_DB_PASSWORD}}
+Environment=APP_ADMIN_DB_USERNAME={{APP_ADMIN_DB_USERNAME}}
+Environment=APP_ADMIN_DB_PASSWORD={{APP_ADMIN_DB_PASSWORD}}
+Environment=SEED_DEMO_DATA={{APP_SEED_DEMO_DATA}}
+
+# Healthcheck - use explicit postgres user to avoid "role root does not exist" errors
+PodmanArgs=--health-cmd="pg_isready -U postgres -d maindb"
+PodmanArgs=--health-interval=10s
+PodmanArgs=--health-timeout=5s
+PodmanArgs=--health-retries=10
+
+# Resource limits (optional)
+{{APP_PODMANARGS_LIMITS_DB}}
+
+[Service]
+Restart=always
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target

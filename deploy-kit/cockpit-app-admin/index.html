@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<!-- Version: 0.26.3 -->
+<!-- Cockpit package: EVI administration panel with left navigation and right content area. -->
+<!-- Provides admin tools: disk status, container environment, full backup, password management, DB tools (pgAdmin), updates. -->
+<!-- Cockpit package; filename: index.html -->
+<!--
+  Changes in v0.26.3:
+  - Removed the full-screen update progress overlay. Install progress stays in the Output panel.
+  - Removed the Dismiss button from the update actions row.
+  - Removed the separate Cockpit panel install status block. That step is a phase in the update log.
+  - Sudo modal lists the install phases. The password is used in the first step and then cleared.
+  - Updates info card is a 4 by 2 grid: versions and status, then installed on, last updated, last checked, and the beta release channel.
+  - One action row: Check updates, Download update, Delete download, Start update. Releases and notes stay above it.
+  - Sudo modal title and confirm button say Start update.
+
+  Changes in v0.26.2:
+  - De-brand runtime paths, filenames, and user-visible product name to application/app.
+  - Container Environment labels name APP_* configuration keys.
+  - Stylesheet, scripts, and the version badge use admin.css, admin.js, update.js, and admin-version.
+  
+  Changes in v0.25.4:
+  - Container Environment copy names config/app.env.
+
+  Changes in v0.25.2:
+  - Full Backup description mentions file storage (fs_data) and state store (state_data),
+    and states that restoring over an existing installation completely replaces it.
+  - Updates section: renamed Refresh button to "Refresh updates list".
+
+  Changes in v0.24.5:
+  - Updates version card shows the staged kit as Downloaded, between Installed and Latest available.
+  - Check row has Refresh. Download / Install row has Delete download between them.
+  - Sudo modal title is "Install update"; the staged version is a line under the title.
+  - helper.update.status.js loads after evi-admin.js and before evi-update.js.
+
+  Changes in v0.23.10:
+  - Consumes .accent-* / .inset-table catalog (was .evi-*).
+
+  Changes in v0.23.6:
+  - Key card title is "Access key"; removed the paste/save help line.
+
+  Changes in v0.23.5:
+  - Always-visible GitHub access key card between the version card and Check for updates.
+  - Sudo modal: explain why the Linux administrator password is needed (Cockpit files only).
+
+  Changes in v0.21.8:
+  - Moved #release-notes-wrapper to sit directly under the releases list, above the
+    Download/Install actions row, so the selected release's notes are visible before
+    the admin can click download or install.
+
+  Changes in v1.12.1:
+  - Moved update overlay and sudo modal outside scrollable main content so position:fixed dialogs display correctly.
+
+  Changes in v1.12.0:
+  - Added Disk Status section as first nav item. Shows system and data disk usage with progress bars.
+    Critical/warning banners appear when disk usage exceeds thresholds (85% warning, 95% critical).
+    Loads disk info via dispatch command disk-status on section open and on init.
+
+  Changes in v1.11.0:
+  - Added Updates section (replaces standalone cockpit-evi-update panel). All update panel UI
+    (version card, check/download/install, releases list, overlay, sudo modal) embedded as a new
+    nav section. evi-update.js and evi-update-dispatch.sh.tpl now live alongside evi-admin.
+
+  Changes in v1.10.0:
+  - Added DB Tools section (below Password Management) with an "Open pgAdmin" link that opens
+    port 5445 in a new tab only on explicit click; no auto-launch. Removed standalone pgAdmin panel.
+
+  Changes in v1.9.1:
+  - Full Backup section description updated to mention both restore scenarios (new server and
+    existing installation) and note that the README covers step-by-step guidance for both.
+
+  Changes in v1.9.0:
+  - Container Environment: added Custom TLS certificate subsection (manual mode only) with
+    multi-file picker, auto-detection of cert/key by PEM header, and Upload to server button.
+
+  Changes in v1.8.0:
+  - Removed CORS origins read-only field (EVI_CORS_ORIGINS) from Container Environment section.
+
+  Changes in v1.7.0:
+  - Removed HTTP port and HTTPS port fields (EVI_HTTP_PORT, EVI_HTTPS_PORT).
+  - Regenerate TLS certificate button moved inline next to TLS mode select.
+  Changes in v1.6.0:
+  - Added version badge (<span id="evi-admin-version">) to header; value injected from EVI_ADMIN_TOOLS_VERSION in evi-admin.js.
+  Changes in v1.5.0:
+  - Container Environment section (first in nav): evi.env fields, tooltips, resource limit selects, Apply & Restart with diff modal, Regenerate TLS (manual)
+  - Removed Certificate Management placeholder section
+  Changes in v1.4.1:
+  - Password Management description: emergency reset wording and state restart / session cookies
+  Changes in v1.4.0:
+  - Password Management: description, new/confirm fields, SET PASSWORD, status and output (system admin only)
+  Changes in v1.3.1:
+  - Default backup path changed to ~/evi/config/backup (deploy kit / runtime config split).
+  Changes in v1.3.0:
+  - Backup progress bar (animated, step counter) between status and output
+  - Encryption password field: input group with show/hide password button (eye icon)
+  Changes in v1.2.0:
+  - Pre-filled backup location with ~/evi/config/backup default
+  - Added note about restore instructions README being created alongside backup
+  - Estimate Size now renders human-readable formatted summary instead of raw JSON
+  Changes in v1.1.0:
+  - Removed ../base1/patternfly.css (not available in all Cockpit versions)
+  - Dark/light theme synced from Cockpit shell via evi-admin.js
+-->
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>app admin tools</title>
+  <link rel="stylesheet" href="admin.css" type="text/css">
+</head>
+<body>
+  <div class="admin">
+    <header class="admin-header">
+      <h1>app admin tools <span id="admin-version" class="admin-version-badge"></span></h1>
+    </header>
+
+    <div class="admin-body">
+      <nav class="admin-nav">
+        <ul class="admin-nav-list">
+          <li class="admin-nav-item active" data-section="disk-status">
+            <span class="admin-nav-icon">&#128190;</span>
+            <span class="admin-nav-label">Disk Status</span>
+          </li>
+          <li class="admin-nav-item" data-section="container-env">
+            <span class="admin-nav-icon">&#9881;</span>
+            <span class="admin-nav-label">Container Environment</span>
+          </li>
+          <li class="admin-nav-item" data-section="backup">
+            <span class="admin-nav-icon">&#128230;</span>
+            <span class="admin-nav-label">Full Backup</span>
+          </li>
+          <li class="admin-nav-item" data-section="passwords">
+            <span class="admin-nav-icon">&#128273;</span>
+            <span class="admin-nav-label">Password Management</span>
+          </li>
+          <li class="admin-nav-item" data-section="dbtools">
+            <span class="admin-nav-icon">&#128451;</span>
+            <span class="admin-nav-label">DB Tools</span>
+          </li>
+          <li class="admin-nav-item" data-section="updates">
+            <span class="admin-nav-icon">&#8635;</span>
+            <span class="admin-nav-label">Updates</span>
+          </li>
+        </ul>
+      </nav>
+
+      <main class="admin-content">
+        <!-- === Disk Status === -->
+        <div id="section-disk-status" class="admin-section">
+          <h2>Disk Status</h2>
+          <p class="admin-description">
+            Disk usage for the system and data volumes. Warnings appear when usage exceeds 85%.
+            Critical alerts appear above 95%.
+          </p>
+
+          <div id="disk-critical-banner" class="admin-disk-banner admin-disk-banner-critical hidden">
+            <strong>Critical:</strong> Disk space is critically low. Free up space immediately to prevent service interruption.
+          </div>
+          <div id="disk-warning-banner" class="admin-disk-banner admin-disk-banner-warning hidden">
+            <strong>Warning:</strong> Disk space is running low. Consider freeing up space or expanding the disk.
+          </div>
+
+          <div id="disk-cards" class="admin-disk-cards">
+            <!-- Populated by JS -->
+          </div>
+
+          <div class="admin-form-actions" style="margin-top: 16px;">
+            <button type="button" id="btn-disk-refresh" class="admin-btn admin-btn-secondary">Refresh</button>
+          </div>
+          <div id="disk-status-msg" class="admin-status hidden"></div>
+        </div>
+
+        <!-- === Container Environment === -->
+        <div id="section-container-env" class="admin-section hidden">
+          <h2>Container Environment</h2>
+          <p class="admin-description">
+            Edit containers environment settings stored in <code>config/app.env</code>. Use Apply &amp; Restart to re-render
+            Quadlet units, and restart all application containers. Review the diff before confirming.
+            For TLS in manual mode, regenerate certificates if you change the domain.
+          </p>
+
+          <form class="admin-form" id="form-container-env" autocomplete="off">
+            <h3 class="admin-section-group-title">Core</h3>
+
+            <div class="admin-form-group">
+              <div class="admin-form-label-row">
+                <label for="env-domain">Domain (APP_DOMAIN)</label>
+                <span class="admin-tooltip" data-tooltip="Public hostname or IP users use in the browser. Examples: app.example.com, 192.168.1.10.">?</span>
+              </div>
+              <input type="text" id="env-domain" class="admin-input" placeholder="e.g. app.example.com or 192.168.1.10">
+              <div id="env-domain-warning" class="admin-domain-warning hidden">
+                Changing the domain requires a matching TLS certificate. For manual TLS, use Regenerate TLS certificate after saving, or switch to Let&apos;s Encrypt for public DNS.
+              </div>
+            </div>
+
+            <div class="admin-form-group">
+              <div class="admin-form-label-row">
+                <label for="env-tls-mode">TLS mode (APP_TLS_MODE)</label>
+                <span class="admin-tooltip" data-tooltip="letsencrypt: automatic public certificates (needs DNS and ports 80/443 open). manual: use certificate files under config/tls/ (typical for LAN or custom certs).">?</span>
+              </div>
+              <div class="admin-tls-mode-row">
+                <select id="env-tls-mode" class="admin-select admin-select-tls-mode">
+                  <option value="letsencrypt">letsencrypt</option>
+                  <option value="manual">manual</option>
+                </select>
+                <button type="button" id="btn-env-regen-cert" class="admin-btn admin-btn-secondary hidden">Regenerate TLS certificate</button>
+              </div>
+            </div>
+
+            <div id="env-cert-upload-group" class="admin-form-group hidden">
+              <div class="admin-form-label-row">
+                <label>Custom TLS certificate</label>
+                <span class="admin-tooltip" data-tooltip="Select cert.pem (certificate) and key.pem (private key). Both files are required. They will be saved to config/tls/ and used by the reverse proxy.">?</span>
+              </div>
+              <p class="admin-hint">Select cert.pem and key.pem files to replace the current certificate in config/tls/.</p>
+              <div class="admin-cert-upload-row">
+                <button type="button" id="btn-cert-select" class="admin-btn admin-btn-secondary">Select certificate files</button>
+                <span id="env-cert-selected-names" class="admin-cert-filename"></span>
+                <input type="file" id="input-cert-files" class="hidden" accept=".pem,.crt,.key" multiple>
+              </div>
+              <div class="admin-form-actions" style="margin-top:12px;">
+                <button type="button" id="btn-cert-do-upload" class="admin-btn admin-btn-primary" disabled>Upload to server</button>
+              </div>
+            </div>
+
+            <div id="env-acme-group" class="admin-form-group">
+              <div class="admin-form-label-row">
+                <label for="env-acme-email">ACME email (APP_ACME_EMAIL)</label>
+                <span class="admin-tooltip" data-tooltip="Let&apos;s Encrypt account email for expiry notices. Example: admin@example.com. Used only when TLS mode is letsencrypt.">?</span>
+              </div>
+              <input type="email" id="env-acme-email" class="admin-input" placeholder="e.g. admin@example.com">
+            </div>
+
+            <h3 class="admin-section-group-title">Admin access (UFW)</h3>
+
+            <div class="admin-form-group">
+              <div class="admin-form-label-row">
+                <label for="env-firewall-access">From which ip addresses or subnets admins may connect to cockpit / pgAdmin ports (APP_FIREWALL_ADMIN_ACCESS)</label>
+                <span class="admin-tooltip" data-tooltip="Controls UFW rules for TCP 9090 (Cockpit) and 5445 (pgAdmin). localhost: same machine only. allowed_ips: comma-separated IPs. allowed_cidr: one subnet. any: any source (use with care). skip: do not add rules.">?</span>
+              </div>
+              <select id="env-firewall-access" class="admin-select">
+                <option value="localhost">localhost</option>
+                <option value="allowed_ips">allowed_ips</option>
+                <option value="allowed_cidr">allowed_cidr</option>
+                <option value="any">any</option>
+                <option value="skip">skip</option>
+              </select>
+            </div>
+
+            <div id="env-firewall-allowed-group" class="admin-form-group hidden">
+              <div class="admin-form-label-row">
+                <label for="env-firewall-allowed">Allowed IPs or CIDR (APP_FIREWALL_ADMIN_ALLOWED)</label>
+                <span class="admin-tooltip" data-tooltip="For allowed_ips: e.g. 192.168.1.10,192.168.1.20. For allowed_cidr: e.g. 192.168.1.0/24. Leave empty if not using those modes.">?</span>
+              </div>
+              <input type="text" id="env-firewall-allowed" class="admin-input" placeholder="e.g. 192.168.1.0/24">
+            </div>
+
+            <h3 class="admin-section-group-title">Resource limits (per container)</h3>
+            <p class="admin-hint admin-limits-intro">CPU and memory limits passed to Podman. Requires Apply &amp; Restart.</p>
+
+            <div class="admin-limits-grid" id="env-limits-grid">
+              <div class="admin-limits-row admin-limits-header">
+                <span>Container</span>
+                <span>CPU</span>
+                <span>Memory</span>
+              </div>
+              <div class="admin-limits-row" data-limit-prefix="PROXY">
+                <span class="admin-limits-name">Reverse proxy (Caddy)</span>
+                <select id="env-limit-cpu-proxy" class="admin-select admin-select-inline" aria-label="CPU limit proxy"></select>
+                <select id="env-limit-mem-proxy" class="admin-select admin-select-inline" aria-label="Memory limit proxy"></select>
+              </div>
+              <div class="admin-limits-row" data-limit-prefix="FE">
+                <span class="admin-limits-name">Frontend</span>
+                <select id="env-limit-cpu-fe" class="admin-select admin-select-inline" aria-label="CPU limit fe"></select>
+                <select id="env-limit-mem-fe" class="admin-select admin-select-inline" aria-label="Memory limit fe"></select>
+              </div>
+              <div class="admin-limits-row" data-limit-prefix="BE">
+                <span class="admin-limits-name">Backend</span>
+                <select id="env-limit-cpu-be" class="admin-select admin-select-inline" aria-label="CPU limit be"></select>
+                <select id="env-limit-mem-be" class="admin-select admin-select-inline" aria-label="Memory limit be"></select>
+              </div>
+              <div class="admin-limits-row" data-limit-prefix="DB">
+                <span class="admin-limits-name">Database</span>
+                <select id="env-limit-cpu-db" class="admin-select admin-select-inline" aria-label="CPU limit db"></select>
+                <select id="env-limit-mem-db" class="admin-select admin-select-inline" aria-label="Memory limit db"></select>
+              </div>
+              <div class="admin-limits-row" data-limit-prefix="STATE">
+                <span class="admin-limits-name">State (Valkey)</span>
+                <select id="env-limit-cpu-state" class="admin-select admin-select-inline" aria-label="CPU limit state"></select>
+                <select id="env-limit-mem-state" class="admin-select admin-select-inline" aria-label="Memory limit state"></select>
+              </div>
+              <div class="admin-limits-row" data-limit-prefix="WORKER">
+                <span class="admin-limits-name">Worker</span>
+                <select id="env-limit-cpu-worker" class="admin-select admin-select-inline" aria-label="CPU limit worker"></select>
+                <select id="env-limit-mem-worker" class="admin-select admin-select-inline" aria-label="Memory limit worker"></select>
+              </div>
+              <div class="admin-limits-row" data-limit-prefix="FS">
+                <span class="admin-limits-name">File Storage (SeaweedFS)</span>
+                <select id="env-limit-cpu-fs" class="admin-select admin-select-inline" aria-label="CPU limit fs"></select>
+                <select id="env-limit-mem-fs" class="admin-select admin-select-inline" aria-label="Memory limit fs"></select>
+              </div>
+            </div>
+
+            <div class="admin-form-actions">
+              <button type="button" id="btn-env-apply" class="admin-btn admin-btn-primary">Apply &amp; Restart</button>
+            </div>
+          </form>
+
+          <div id="env-container-status" class="admin-status hidden"></div>
+
+          <div id="env-container-progress" class="admin-progress-wrapper hidden">
+            <div class="admin-progress-bar">
+              <div id="env-container-progress-fill" class="admin-progress-fill admin-progress-indeterminate"></div>
+            </div>
+            <div id="env-container-progress-text" class="admin-progress-text">Applying configuration…</div>
+          </div>
+
+          <div id="env-container-output-wrapper" class="admin-output-wrapper hidden">
+            <div class="admin-output-header">
+              <h3>Output</h3>
+              <button type="button" id="btn-env-output-clear" class="admin-btn admin-btn-small">Clear</button>
+            </div>
+            <pre id="env-container-output" class="admin-output"></pre>
+          </div>
+        </div>
+
+        <!-- Diff confirmation modal -->
+        <div id="env-diff-modal" class="admin-modal hidden" aria-hidden="true">
+          <div class="admin-modal-backdrop"></div>
+          <div class="admin-modal-box" role="dialog" aria-labelledby="env-diff-modal-title">
+            <h3 id="env-diff-modal-title" class="admin-modal-title">Confirm changes</h3>
+            <p class="admin-modal-lead">The following values will be written to <code>app.env</code> and services will restart.</p>
+            <pre id="env-diff-body" class="admin-diff-body"></pre>
+            <div class="admin-modal-actions">
+              <button type="button" id="btn-env-diff-cancel" class="admin-btn admin-btn-secondary">Cancel</button>
+              <button type="button" id="btn-env-diff-confirm" class="admin-btn admin-btn-primary">Confirm &amp; Restart</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- === Backup Section === -->
+        <div id="section-backup" class="admin-section hidden">
+          <h2>Full Backup</h2>
+          <p class="admin-description">
+            Create a complete backup of all application components: container images, database,
+            file storage (<code>fs_data</code>), state store (<code>state_data</code>),
+            environment configuration, TLS certificates, JWT secrets, and installation scripts.
+            The backup set is self-contained and supports two restore scenarios:
+            restore on a <strong>new server</strong> (fresh install with auto-setup of system prerequisites),
+            or restore <strong>over the current installation</strong> (wipes the current installation and replaces it with the backup).
+            A restore instructions file (README-RESTORE-STEP-BY-STEP.md) with step-by-step
+            guidance for both scenarios will be created alongside the backup.
+          </p>
+
+          <form class="admin-form" autocomplete="off">
+            <div class="admin-form-group">
+              <label for="backup-dir">Backup location</label>
+              <input type="text" id="backup-dir" class="admin-input"
+                     value="~/app/config/backup"
+                     placeholder="e.g. /home/user/app/config/backup">
+              <span class="admin-hint">Directory where backup files will be created</span>
+            </div>
+
+            <div class="admin-form-group">
+              <label for="backup-compression">Compression method</label>
+              <select id="backup-compression" class="admin-select">
+                <option value="gzip-standard">gzip &mdash; standard (default)</option>
+                <option value="zstd-fast">zstd &mdash; fast</option>
+                <option value="zstd-max">zstd &mdash; max compression</option>
+              </select>
+            </div>
+
+            <div class="admin-form-group admin-form-group-checkbox">
+              <label class="admin-checkbox-label">
+                <input type="checkbox" id="backup-encrypt">
+                <span>Encrypt backup with password</span>
+              </label>
+            </div>
+
+            <div id="password-group" class="admin-form-group hidden">
+              <label for="backup-password">Encryption password</label>
+              <div class="admin-input-group">
+                <input type="password" id="backup-password" class="admin-input"
+                       placeholder="Enter password for backup encryption">
+                <button type="button" id="btn-toggle-password" class="admin-btn-toggle-password" title="Show password" aria-label="Show password">
+                  <svg class="admin-icon-eye" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg class="admin-icon-eye-off hidden" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                </button>
+              </div>
+              <span class="admin-hint">The password will be required to restore the backup</span>
+            </div>
+
+            <div class="admin-form-actions">
+              <button type="button" id="btn-backup-start" class="admin-btn admin-btn-primary">
+                Start Full Backup
+              </button>
+              <button type="button" id="btn-backup-estimate" class="admin-btn admin-btn-secondary">
+                Estimate Size
+              </button>
+            </div>
+          </form>
+
+          <div id="backup-status" class="admin-status hidden"></div>
+
+          <div id="backup-progress" class="admin-progress-wrapper hidden">
+            <div class="admin-progress-bar">
+              <div id="backup-progress-fill" class="admin-progress-fill"></div>
+            </div>
+            <div id="backup-progress-text" class="admin-progress-text">Backup in progress...</div>
+          </div>
+
+          <div id="backup-output-wrapper" class="admin-output-wrapper hidden">
+            <div class="admin-output-header">
+              <h3>Output</h3>
+              <button type="button" id="btn-backup-clear" class="admin-btn admin-btn-small">Clear</button>
+            </div>
+            <pre id="backup-output" class="admin-output"></pre>
+          </div>
+        </div>
+
+        <!-- === Password Management Section === -->
+        <div id="section-passwords" class="admin-section hidden">
+          <h2>Password Management</h2>
+          <p class="admin-description">
+            In emergency cases you can set a new password for built-in admin account. This will also restart state container to drop all session cookies.
+          </p>
+
+          <form class="admin-form" id="form-admin-password" autocomplete="off">
+            <div class="admin-form-group">
+              <label for="admin-password-new">New password</label>
+              <input type="password" id="admin-password-new" class="admin-input"
+                     placeholder="Enter new password for admin">
+            </div>
+            <div class="admin-form-group">
+              <label for="admin-password-confirm">Confirm new password</label>
+              <input type="password" id="admin-password-confirm" class="admin-input"
+                     placeholder="Re-enter new password">
+            </div>
+            <div class="admin-form-actions">
+              <button type="button" id="btn-admin-password-set" class="admin-btn admin-btn-primary">
+                SET PASSWORD
+              </button>
+            </div>
+          </form>
+
+          <div id="password-status" class="admin-status hidden"></div>
+
+          <div id="password-output-wrapper" class="admin-output-wrapper hidden">
+            <div class="admin-output-header">
+              <h3>Output</h3>
+              <button type="button" id="btn-password-output-clear" class="admin-btn admin-btn-small">Clear</button>
+            </div>
+            <pre id="password-output" class="admin-output"></pre>
+          </div>
+        </div>
+
+        <!-- === DB Tools Section === -->
+        <div id="section-dbtools" class="admin-section hidden">
+          <h2>DB Tools</h2>
+          <p class="admin-description">
+            pgAdmin is a web-based database management tool for PostgreSQL.
+            It runs on the same server, port 5445.
+          </p>
+
+          <div class="admin-form-actions">
+            <a id="pgadmin-link" class="admin-btn admin-btn-primary"
+               href="#" target="_blank" rel="noopener noreferrer">Open pgAdmin</a>
+          </div>
+
+          <div class="admin-dbtools-credentials">
+            <p><strong>Login:</strong> evidba@pgadmin.app</p>
+            <p><strong>Password:</strong> use APP_ADMIN_DB_PASSWORD variable from Podman containers &rarr; db &rarr; Integration tab.</p>
+          </div>
+        </div>
+
+        <!-- === Updates Section === -->
+        <div id="section-updates" class="admin-section hidden">
+          <h2>Updates</h2>
+
+          <!-- Compatibility warning (when selected version not compatible) -->
+          <div id="compatibility-warning" class="update-compatibility-warning hidden">
+            <strong>Direct update not supported</strong> from your current version. Update to the required intermediate version first, then try again.
+          </div>
+
+          <!-- Version info card -->
+          <div class="update-card">
+            <div class="update-version-grid">
+              <div class="update-version-item">
+                <span class="update-version-label">Installed version</span>
+                <span id="current-version" class="update-version-value">—</span>
+              </div>
+              <div class="update-version-item">
+                <span class="update-version-label">Latest available</span>
+                <span id="latest-version" class="update-version-value">—</span>
+              </div>
+              <div class="update-version-item">
+                <span class="update-version-label">Downloaded</span>
+                <span id="downloaded-version" class="update-version-value">—</span>
+              </div>
+              <div class="update-version-item">
+                <span class="update-version-label">Status</span>
+                <span id="update-status-badge" class="update-badge update-badge-neutral">unknown</span>
+              </div>
+              <div class="update-version-item">
+                <span class="update-version-label">Installed on</span>
+                <span id="installed-date" class="update-version-value update-version-secondary">—</span>
+              </div>
+              <div class="update-version-item">
+                <span class="update-version-label">Last updated</span>
+                <span id="last-updated-date" class="update-version-value update-version-secondary">—</span>
+              </div>
+              <div class="update-version-item">
+                <span class="update-version-label">Last checked</span>
+                <span id="last-check" class="update-version-value update-version-secondary">—</span>
+              </div>
+              <div class="update-version-item">
+                <span class="update-version-label">Release channel</span>
+                <label class="update-beta-label">
+                  <input type="checkbox" id="chk-beta" class="update-beta-checkbox">
+                  <span>Enable beta versions</span>
+                  <span class="update-tooltip" data-tooltip="Includes beta versions when checking, downloading, and installing updates. Use at your own risk.">?</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div id="github-token-card" class="update-card update-github-card">
+            <div class="update-github-header">
+              <h3 class="update-github-title">Access key</h3>
+              <span id="github-token-badge" class="update-badge update-badge-neutral">Key not set</span>
+            </div>
+            <div class="update-github-row">
+              <input type="password" id="github-token-input" class="update-github-input"
+                     autocomplete="off" placeholder="paste the key" />
+              <button type="button" id="btn-github-token-save" class="update-btn update-btn-secondary">
+                Save key
+              </button>
+            </div>
+            <p id="github-token-msg" class="update-github-msg hidden"></p>
+          </div>
+
+          <!-- Available releases list (populated by JS after check) -->
+          <div id="releases-list-wrapper" class="update-releases-wrapper hidden">
+            <div class="update-releases-header">
+              <h3>Available releases</h3>
+            </div>
+            <div id="releases-list" class="update-releases-list">
+              <!-- Populated dynamically by update.js -->
+            </div>
+          </div>
+
+          <!-- Release notes for the selected version — shown before download/install so the
+               admin can see what's new before committing to an update. -->
+          <div id="release-notes-wrapper" class="update-release-notes hidden">
+            <h3>Release notes</h3>
+            <pre id="release-notes" class="update-release-notes-content"></pre>
+          </div>
+
+          <!-- Single action row: Check / Download / Delete / Start update -->
+          <div class="update-actions">
+            <button type="button" id="btn-check" class="update-btn update-btn-secondary">
+              Check updates
+            </button>
+            <button type="button" id="btn-download" class="update-btn update-btn-primary" disabled>
+              Download update
+            </button>
+            <button type="button" id="btn-delete-download" class="update-btn update-btn-secondary" disabled>
+              Delete download
+            </button>
+            <button type="button" id="btn-install" class="update-btn update-btn-danger" disabled>
+              Start update
+            </button>
+          </div>
+
+          <!-- Status indicator -->
+          <div id="operation-status" class="update-status hidden"></div>
+
+          <!-- Progress bar -->
+          <div id="progress-wrapper" class="update-progress-wrapper hidden">
+            <div class="update-progress-bar">
+              <div id="progress-fill" class="update-progress-fill update-progress-indeterminate"></div>
+            </div>
+            <div id="progress-text" class="update-progress-text">Working...</div>
+          </div>
+
+          <!-- Output area -->
+          <div id="output-wrapper" class="update-output-wrapper hidden">
+            <div class="update-output-header">
+              <h3>Output</h3>
+              <button type="button" id="btn-clear" class="update-btn update-btn-small">Clear</button>
+            </div>
+            <pre id="output" class="update-output"></pre>
+          </div>
+
+        </div>
+      </main>
+    </div>
+
+    <!-- Update modals (outside scrollable main — position:fixed must not be clipped) -->
+    <div id="sudo-modal" class="update-sudo-modal hidden">
+      <div class="update-sudo-backdrop"></div>
+      <div class="update-sudo-box">
+        <h3 class="update-sudo-title">Start update</h3>
+        <p class="update-sudo-version">Version to install: <span id="sudo-install-version"></span></p>
+        <ul class="update-sudo-what">
+          <li>Sync host prerequisites and update Cockpit panel</li>
+          <li>Migrate database schema (with pre-update snapshot)</li>
+          <li>Update application files and configuration</li>
+          <li>Restart all application services and verify health</li>
+        </ul>
+        <p class="update-sudo-note">You can navigate away — the update will continue in the background.</p>
+        <p class="update-sudo-why">
+          The Linux administrator password (sudo) is used in the first step to sync host prerequisites and refresh the Cockpit panel, and is cleared from memory immediately after.
+        </p>
+        <label class="update-sudo-label">Sudo password</label>
+        <input type="password" id="sudo-password-input" class="update-sudo-input" autocomplete="current-password" placeholder="required to update Cockpit panels" />
+        <p id="sudo-error" class="update-sudo-error hidden">Incorrect password. Please try again.</p>
+        <div class="update-sudo-actions">
+          <button type="button" id="btn-sudo-cancel" class="update-btn update-btn-secondary">Cancel</button>
+          <button type="button" id="btn-sudo-confirm" class="update-btn update-btn-primary">Start update</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../base1/cockpit.js"></script>
+  <script src="admin.js"></script>
+  <script src="helper.update.status.js"></script>
+  <script src="update.js"></script>
+</body>
+</html>

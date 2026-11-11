@@ -1,0 +1,41 @@
+#
+# Version: 0.26.3
+# Purpose: Single source of truth for the files that MUST be present in the
+#   update-kit for it to function. Consumed by the release gate
+#   (validate_prerequisites in release.sh) and by kit-archive validation
+#   (validate_kit_archive). The download flow also validates a newly
+#   downloaded kit against this list when the file is present in that kit.
+#   Adding a load-bearing file to this kit means adding it here in the same
+#   commit.
+# File: MANIFEST
+#
+# Changes in v0.26.3:
+# - Lists the check, download, and install orchestrators and their phase scripts.
+#   The previous entrypoint names are no longer part of the kit.
+#
+# Changes in v0.23.4:
+# - Added update-kit/scripts/lib/github-auth.sh (shared GitHub access-key helpers).
+#
+# Changes in v0.23.2:
+# - Initial manifest: update scripts, shared version library, and the
+#   migration prelude that run-migrations.sh applies unconditionally.
+#
+
+update-kit/MANIFEST
+update-kit/scripts/update-check-orchestrator.sh
+update-kit/scripts/check-1-fetch-releases.sh
+update-kit/scripts/check-2-evaluate-compatibility.sh
+update-kit/scripts/update-download-orchestrator.sh
+update-kit/scripts/download-1-release-kit.sh
+update-kit/scripts/download-2-container-images.sh
+update-kit/scripts/update-install-orchestrator.sh
+update-kit/scripts/update-1-preflight.sh
+update-kit/scripts/update-2-host-and-cockpit.sh
+update-kit/scripts/update-3-migrate-db.sh
+update-kit/scripts/update-4-files-and-config.sh
+update-kit/scripts/update-5-start-and-verify.sh
+update-kit/scripts/run-migrations.sh
+update-kit/scripts/lib/version.sh
+update-kit/scripts/lib/github-auth.sh
+update-kit/scripts/lib/update-common.sh
+update-kit/migrations/_prelude/00_migration_helpers.sql
