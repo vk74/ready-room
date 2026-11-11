@@ -1,9 +1,9 @@
 {
   "name": "evi",
-  "version": "0.27.4-beta",
+  "version": "0.27.5-beta",
   "installRepo": "vk74/ready-room",
   "updateCompatibility": {
-    "minVersion": "0.27.1"
+    "minVersion": "0.27.4-beta"
   },
   "infrastructure": {
     "reverse-proxy": "docker.io/caddy:2.8-alpine",

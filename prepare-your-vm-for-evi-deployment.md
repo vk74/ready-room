@@ -4,17 +4,16 @@
 
 Recommended specs for your physical server or virtual machine to run evi:
 
-**RAM for test environment:** 2Gb
+**RAM :** 2Gb for test environment, 4Gb or more for production
 
-**RAM for production:** 4 GB or more depending on workload
 
-**CPU for test environment:** 1 core
+**CPU:** 1 core for test, 2 cores or more depending on workload. installation script wil pull arm64 or amd64 app builds depending on your platfom
 
-**CPU for production:** 2 cores or more depending on workload
+
 
 **Network:** 1 NIC 
 
-**SSD** ~ 1 Gb of free space for containers environment + additional space as needed for DB and FS volumes.
+**SSD** ~ 1.5 Gb of free space for containers environment + additional space as needed for DB and FS volumes.
 
 **OS:** EVI was tested on Ubuntu 24.04 and 26.04 and is compatible with any distributions of Debian family. The README paste installs `curl` (via `sudo apt-get update && sudo apt-get install -y curl`); you do not need to preinstall it. Podman, Cockpit, UFW, fail2ban, and the rest of the evi host stack are installed only when you start Deploy (option 2) in the installer. fail2ban also arrives later via update/repair from `prerequisites.conf`. It is not installed by the README paste or Configure. On a public IP, finish Deploy promptly so SSH is not left without an autoban jail. README still installs curl only.
 
@@ -23,7 +22,7 @@ Recommended specs for your physical server or virtual machine to run evi:
 You can install EVI on virtual machine or physical server. 
 
 1. Deploy Linux OS on your server. You do not need to confirm `curl` first — the README paste installs it. OS updates and evi host prerequisites are **not** applied until you confirm Deploy (option 2) — they are not installed by the README paste or by Configure (option 1).
-2. Optional step to improve disk IOPS: prepare and mount separate physical drives for DB volume and FS volume. Installation script will as you where to store these volumes.
+2. Optional step to improve disk IOPS and overall app performance: use separate physical drives for DB and FS volumes and choose them during installation.
 3. Copy and run installation block of commands from README.md
 
 ## Additional information to consider

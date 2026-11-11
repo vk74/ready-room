@@ -16,6 +16,9 @@
 #
 # Changes in v0.27.4:
 # - Default APP_INSTALL_REPO is vk74/ready-room.
+# - download_release_kit_archive() downloads the GitHub API tarball from APP_INSTALL_REPO first (no release-assets CDN timeout warning), with the release asset as fallback.
+# - main_menu() shows a green checkmark [✓] on step 1 when .install-config is saved, and distinguishes a freshly saved config from an interrupted deploy.
+# - deploy_full() wipes any leftover Podman containers and volumes from a prior installation before starting a fresh deploy, and deploy_up() uses systemctl restart so pre-existing units cannot mask the new containers or skip demo-data seeding.
 # - load_deploy_env() rewrites an empty or legacy install repository (owner vk74, repository evi) to the kit template value and saves it in config/app.env.
 # - guided_setup() saves APP_INSTALL_REPO from the kit template into config/app.env on every save.
 # - restore_sync_deploy_kit() downloads the latest kit from APP_INSTALL_REPO when the backup version is missing there and the host kit is incomplete.
@@ -1831,20 +1834,19 @@ get_current_kit_version() {
 # Args: $1=tag (e.g. v0.15.2), $2=version (e.g. 0.15.2). Returns 0 on success.
 download_release_kit_archive() {
   local tag="$1" version="$2"
-  local archive_url="https://github.com/${APP_INSTALL_REPO}/releases/download/${tag}/evi-${version}.tar.gz"
   local tarball_url="https://api.github.com/repos/${APP_INSTALL_REPO}/tarball/${tag}"
+  local archive_url="https://github.com/${APP_INSTALL_REPO}/releases/download/${tag}/evi-${version}.tar.gz"
 
   log "downloading kit archive for version ${version}..."
   local tmp_archive
   tmp_archive=$(mktemp "${SCRIPT_DIR}/app-kit-XXXXXX.tar.gz")
 
   local http_code
-  http_code=$(github_curl -sS -L --fail --connect-timeout 10 --max-time 90 -w "%{http_code}" -o "${tmp_archive}" "${archive_url}" 2>/dev/null) || true
+  http_code=$(github_curl -sS -L --connect-timeout 15 --max-time 120 -w "%{http_code}" \
+    -H "Accept: application/vnd.github+json" \
+    -o "${tmp_archive}" "${tarball_url}" 2>/dev/null) || true
   if [[ "${http_code}" != "200" ]]; then
-    log "release asset unavailable (HTTP ${http_code:-000}); falling back to GitHub API tarball..."
-    http_code=$(github_curl -sS -L --connect-timeout 15 --max-time 120 -w "%{http_code}" \
-      -H "Accept: application/vnd.github+json" \
-      -o "${tmp_archive}" "${tarball_url}" 2>/dev/null) || true
+    http_code=$(github_curl -sS -L --fail --connect-timeout 10 --max-time 90 -w "%{http_code}" -o "${tmp_archive}" "${archive_url}" 2>/dev/null) || true
     if [[ "${http_code}" != "200" ]]; then
       local _app_gh_hint=""
       if [[ -z "${APP_GITHUB_TOKEN:-}" ]] && [[ "${http_code}" == "401" || "${http_code}" == "403" || "${http_code}" == "404" ]]; then
@@ -3374,6 +3376,36 @@ deploy_full() {
 
   # --- Phase 5: Deploy containers ---
   phase "5/5" "deploying containers"
+  # Ensure no leftover containers or data volumes from a previous install (e.g. ~/evi)
+  # remain in Podman before initializing a fresh deployment.
+  if command -v podman >/dev/null 2>&1; then
+    local _has_leftover=0 _c _v
+    for _c in db state fs be fe reverse-proxy worker pgadmin; do
+      if podman container exists "${_c}" 2>/dev/null; then _has_leftover=1; break; fi
+    done
+    if [[ "${_has_leftover}" -eq 0 ]]; then
+      for _v in db_data fs_data state_data; do
+        if podman volume inspect "${_v}" >/dev/null 2>&1; then _has_leftover=1; break; fi
+      done
+    fi
+    if [[ "${_has_leftover}" -eq 1 ]]; then
+      log "cleaning up leftover containers and volumes from previous installation..."
+      systemctl --user stop reverse-proxy fe be worker fs state db pgadmin db-volume.service fs-volume.service state-volume.service network-network.service network.service 2>/dev/null || true
+      for _c in reverse-proxy fe be worker fs state db pgadmin; do
+        podman rm -f "${_c}" >/dev/null 2>&1 || true
+      done
+      for _v in db_data fs_data state_data caddy_data caddy_config; do
+        podman volume rm -f "${_v}" >/dev/null 2>&1 || true
+      done
+      if [[ -n "${INSTALL_DATA_PATH:-}" ]]; then
+        wipe_bind_volume_dir_for_restore "${INSTALL_DATA_PATH}" "db"
+        wipe_bind_volume_dir_for_restore "${INSTALL_DATA_PATH}" "state"
+      fi
+      if [[ -n "${fs_effective_data_path:-}" ]]; then
+        wipe_bind_volume_dir_for_restore "${fs_effective_data_path}" "fs"
+      fi
+    fi
+  fi
   deploy_up
 
   # Clean up install config (contains passwords)
@@ -4360,29 +4392,30 @@ deploy_up() {
       log "OK: images pulled."
       systemctl --user daemon-reload
       systemctl --user start network-network.service db-volume.service fs-volume.service state-volume.service 2>/dev/null || true
-      systemctl --user start db 2>/dev/null || true
+      systemctl --user restart db 2>/dev/null || true
       sleep 2
-      systemctl --user start state 2>/dev/null || true
+      systemctl --user restart state 2>/dev/null || true
       sleep 2
-      systemctl --user start fs 2>/dev/null || true
+      systemctl --user restart fs 2>/dev/null || true
       sleep 3
-      # Wait for PostgreSQL to accept connections (up to 2s) before starting be
+      # Wait for the real TCP PostgreSQL server (not the temporary initdb Unix socket)
+      # so init scripts and demo-data seeding finish before starting be and worker.
       local db_name="${APP_POSTGRES_DB:-maindb}"
-      local wait_attempts=4
+      local wait_attempts=45
       local wait_i=0
       while [[ ${wait_i} -lt ${wait_attempts} ]]; do
-        if podman exec db pg_isready -U postgres -d "${db_name}" 2>/dev/null; then
+        if podman exec db pg_isready -h 127.0.0.1 -U postgres -d "${db_name}" >/dev/null 2>&1; then
           break
         fi
-        sleep 0.5
+        sleep 2
         wait_i=$((wait_i + 1))
       done
-      if ! systemctl --user start be fe reverse-proxy 2>/dev/null; then
-        up_errors="systemctl start be fe reverse-proxy failed"
+      if ! systemctl --user restart be fe reverse-proxy 2>/dev/null; then
+        up_errors="systemctl restart be fe reverse-proxy failed"
       fi
-      systemctl --user start worker 2>/dev/null || true
+      systemctl --user restart worker 2>/dev/null || true
       if [[ "${APP_PGADMIN_ENABLED:-false}" == "true" ]]; then
-        systemctl --user start pgadmin 2>/dev/null || true
+        systemctl --user restart pgadmin 2>/dev/null || true
       fi
       # Per-unit start status
       log "Service start status:"
@@ -5892,13 +5925,21 @@ main_menu() {
       # --- Fresh 2-step flow, including an unfinished deploy (.install-config still present) ---
       echo ""
       if [[ "${INSTALL_CONFIG_EXISTS}" -eq 1 ]]; then
-        printf "${NEON_AMBER}%s${NC}\n" "saved configuration is present. deploy was interrupted (for example by a reboot). choose 2 to continue."
+        if [[ "${CONFIG_EXISTS}" -eq 1 ]]; then
+          printf "${NEON_AMBER}%s${NC}\n" "saved configuration is present. deploy was interrupted (for example by a reboot). choose 2 to continue."
+        else
+          printf "${GREEN}%s${NC}\n" "configuration saved. choose 2 to deploy application."
+        fi
         echo ""
       fi
       echo "  0) exit"
       echo ""
       printf "  ${DIM}${NEON_CYAN}--- new deployment (2 steps) ---${NC}\n"
-      echo "  1) environment configuration"
+      if [[ "${INSTALL_CONFIG_EXISTS}" -eq 1 ]]; then
+        printf "  1) %s environment configuration\n" "${SYM_OK}"
+      else
+        echo "  1) environment configuration"
+      fi
       echo "  2) deploy application"
       echo ""
       printf "  ${DIM}${NEON_CYAN}--- restore installation from backup ---${NC}\n"

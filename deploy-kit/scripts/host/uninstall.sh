@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 #
-# Version: 0.26.3
+# Version: 0.27.5
 # Purpose: Full uninstall of application: containers, volumes, secrets, images, state, config, quadlets, cockpit panels, UFW rules, sysctl, apt packages.
 # File: uninstall.sh
 # Backend script, called from install.sh (option 5) or evi-reconfigure.sh. Can be run standalone.
 # Logic: Single confirmation (type 'yes'), stop services, remove podman resources, remove dirs (config/ with sudo for pgadmin data), quadlets, systemd reload,
 #        then sudo block: cockpit panels, UFW rules by number for ports 80/443/9090/5445, sysctl, apt remove. Prints instruction to run rm -rf ~/evi.
+#
+# Changes in v0.27.5:
+# - Remove state_data volume, current short-named quadlet files ({db,be,fe,state,worker,fs,reverse-proxy,pgadmin}.container, {db,fs,state}.volume, network.network), and ghcr.io/vk74/{fe,be,db,worker} + valkey images during uninstall.
 #
 # Changes in v0.26.3:
 # - DEPLOYMENT_DIR is the kit root, two levels above this script (scripts/host/).
@@ -157,12 +160,12 @@ remove_bind_volume_dir() {
   [[ -z "${base_path}" ]] && return 0
 
   case "${leaf}" in
-    db|fs) ;;
+    db|fs|state) ;;
     *) return 0 ;;
   esac
 
   local target="${base_path%/}/${leaf}"
-  if [[ "${target}" == "/db" ]] || [[ "${target}" == "/fs" ]]; then
+  if [[ "${target}" == "/db" ]] || [[ "${target}" == "/fs" ]] || [[ "${target}" == "/state" ]]; then
     warn "skipping unsafe bind directory removal for ${label}: ${target}"
     return 0
   fi
@@ -218,8 +221,9 @@ main() {
   done
 
   log "removing podman volumes..."
+  systemctl --user stop db-volume.service fs-volume.service state-volume.service network-network.service network.service 2>/dev/null || true
   local vol
-  for vol in db_data fs_data caddy_data caddy_config; do
+  for vol in db_data fs_data state_data caddy_data caddy_config; do
     if podman volume rm "${vol}" 2>/dev/null; then
       printf "  %s removed volume %s\n" "${SYM_OK}" "${vol}"
     else
@@ -257,10 +261,11 @@ main() {
   log "removing external bind directories for DB/FS (if configured)..."
   remove_bind_volume_dir "${db_data_path}" "db" "db volume"
   remove_bind_volume_dir "${fs_data_path}" "fs" "fs volume"
+  remove_bind_volume_dir "${db_data_path}" "state" "state volume"
 
   log "removing application container images..."
   local img
-  for img in $(podman images --format "{{.Repository}}:{{.Tag}}" 2>/dev/null | grep -E "evi|pgadmin|caddy|seaweedfs" || true); do
+  for img in $(podman images --format "{{.Repository}}:{{.Tag}}" 2>/dev/null | grep -E 'ghcr.io/.*/(fe|be|db|worker):|evi|pgadmin|caddy|seaweedfs|valkey' || true); do
     if podman rmi -f "${img}" 2>/dev/null; then
       printf "  %s removed image %s\n" "${SYM_OK}" "${img}"
     fi
@@ -269,7 +274,14 @@ main() {
   local quadlet_dir="${APP_QUADLET_DIR_DEFAULT}"
   log "removing quadlet files..."
   if [[ -d "${quadlet_dir}" ]]; then
-    rm -f "${quadlet_dir}"/evi-*.container "${quadlet_dir}"/evi-*.volume "${quadlet_dir}"/evi-*.network "${quadlet_dir}"/evi.network "${quadlet_dir}"/network 2>/dev/null || true
+    rm -f "${quadlet_dir}"/{db,be,fe,state,worker,fs,reverse-proxy,pgadmin}.container \
+      "${quadlet_dir}"/{db,fs,state}.volume \
+      "${quadlet_dir}"/network.network \
+      "${quadlet_dir}"/network \
+      "${quadlet_dir}"/evi-*.container \
+      "${quadlet_dir}"/evi-*.volume \
+      "${quadlet_dir}"/evi-*.network \
+      "${quadlet_dir}"/evi.network 2>/dev/null || true
     printf "  %s quadlet files removed\n" "${SYM_OK}"
   fi
 
