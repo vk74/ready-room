@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Version: 0.27.1
+# Version: 0.28.3
 # Purpose: Dispatcher for application update Cockpit package.
 # Routes commands from the Cockpit UI to the appropriate update scripts.
 # read-status reports the staged kit version and, when config/app.env exists,
@@ -9,6 +9,9 @@
 # The {{DEPLOYMENT_DIR}} placeholder is replaced during install.sh with the
 # actual deployment directory path.
 # Cockpit package. File: update-dispatch.sh
+#
+# Changes in v0.28.3:
+# - Removed `github-token-status` and `set-github-token` dispatch commands.
 #
 # Changes in v0.27.1:
 # - Preserve trailing newlines when reading log chunks in update-progress so
@@ -497,45 +500,9 @@ case "$CMD" in
     CURRENT_VERSION=$(sed -n '1,20p' "${DEPLOYMENT_DIR}/install.sh" 2>/dev/null | grep -m1 '^# Version: ' | sed 's/^# Version:[[:space:]]*//' || echo "?")
     echo "CURRENT_VERSION=${CURRENT_VERSION}"
     ;;
-  github-token-status)
-    configured=false
-    token_file="${DEPLOYMENT_DIR}/.github-token"
-    if [[ -s "${token_file}" ]]; then
-      line=$(head -n 1 "${token_file}" || true)
-      line="${line%$'\r'}"
-      if [[ -n "${line}" ]]; then
-        configured=true
-      fi
-      line=""
-    fi
-    if [[ "${configured}" != "true" ]]; then
-      secrets_file="${CONFIG_DIR}/app.secrets.env"
-      if [[ -f "${secrets_file}" ]]; then
-        line=$(grep "^APP_GITHUB_TOKEN=" "${secrets_file}" 2>/dev/null | head -n 1 || true)
-        val="${line#APP_GITHUB_TOKEN=}"
-        if [[ "${val}" == \"*\" ]]; then
-          val="${val#\"}"
-          val="${val%\"}"
-        elif [[ "${val}" == \'*\' ]]; then
-          val="${val#\'}"
-          val="${val%\'}"
-        fi
-        if [[ -n "${val}" ]]; then
-          configured=true
-        fi
-        val=""
-      fi
-    fi
-    printf '{"configured":%s}\n' "${configured}"
-    ;;
-  set-github-token)
-    # inherits stdin from cockpit.spawn — do not put token in argv or env
-    export APP_HOME="$DEPLOYMENT_DIR"
-    exec "${SCRIPTS_DIR}/admin/set-github-token.sh" "$DEPLOYMENT_DIR"
-    ;;
   *)
     echo "ERROR: Unknown command: ${CMD}" >&2
-    echo "Available commands: list-releases, download-update, discard-download, read-status, start-update, update-progress, cleanup-update, set-include-beta, get-defaults, verify-sudo, github-token-status, set-github-token" >&2
+    echo "Available commands: list-releases, download-update, discard-download, read-status, start-update, update-progress, cleanup-update, set-include-beta, get-defaults, verify-sudo" >&2
     exit 1
     ;;
 esac

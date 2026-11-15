@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# version: 1.5.1
+# version: 0.28.3
 # Sync the canonical role-auth scripts into the vendored scripts/_lib copies
 # of every dependent skill, or verify they are in sync with --check.
 # File: sync-lib.sh
+#
+# Changes in v0.28.3:
+# - Added role-service-admin, role-service-auditor, role-service-practice-manager, and role-service-coordinator to the dependent skills list.
 #
 # Changes in v1.5.1:
 # - Renamed skills evi-* → role-*; sync/pack targets and lib script names updated (role-auth.sh / role-request.sh / role-setup.sh).
@@ -37,7 +40,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILLS_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CANONICAL_DIR="${SKILLS_ROOT}/role-auth/scripts"
 LIB_FILES=(role-auth.sh role-request.sh role-setup.sh)
-DEPENDENT_SKILLS=(role-kb-reader role-kb-author role-kb-admin role-attachments role-admin-products-auditor role-admin-products-editor role-admin-products-specialist role-admin-products-admin)
+DEPENDENT_SKILLS=(role-kb-reader role-kb-author role-kb-admin role-attachments role-admin-products-auditor role-admin-products-editor role-admin-products-specialist role-admin-products-admin role-service-admin role-service-auditor role-service-practice-manager role-service-coordinator)
 
 die() {
   echo "sync-lib: $*" >&2

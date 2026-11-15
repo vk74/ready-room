@@ -1,9 +1,13 @@
 <!DOCTYPE html>
-<!-- Version: 0.26.3 -->
+<!-- Version: 0.28.3 -->
 <!-- Cockpit package: EVI administration panel with left navigation and right content area. -->
 <!-- Provides admin tools: disk status, container environment, full backup, password management, DB tools (pgAdmin), updates. -->
 <!-- Cockpit package; filename: index.html -->
 <!--
+  Changes in v0.28.3:
+  - Removed the Access key (`#github-token-card`) card from the Updates section.
+  - Replaced the phase list and notes in `#sudo-modal` with a prominent backup/snapshot recommendation banner and a short explanation of service restart and one-time sudo usage.
+
   Changes in v0.26.3:
   - Removed the full-screen update progress overlay. Install progress stays in the Output panel.
   - Removed the Dismiss button from the update actions row.
@@ -522,21 +526,6 @@
             </div>
           </div>
 
-          <div id="github-token-card" class="update-card update-github-card">
-            <div class="update-github-header">
-              <h3 class="update-github-title">Access key</h3>
-              <span id="github-token-badge" class="update-badge update-badge-neutral">Key not set</span>
-            </div>
-            <div class="update-github-row">
-              <input type="password" id="github-token-input" class="update-github-input"
-                     autocomplete="off" placeholder="paste the key" />
-              <button type="button" id="btn-github-token-save" class="update-btn update-btn-secondary">
-                Save key
-              </button>
-            </div>
-            <p id="github-token-msg" class="update-github-msg hidden"></p>
-          </div>
-
           <!-- Available releases list (populated by JS after check) -->
           <div id="releases-list-wrapper" class="update-releases-wrapper hidden">
             <div class="update-releases-header">
@@ -600,18 +589,14 @@
       <div class="update-sudo-box">
         <h3 class="update-sudo-title">Start update</h3>
         <p class="update-sudo-version">Version to install: <span id="sudo-install-version"></span></p>
-        <ul class="update-sudo-what">
-          <li>Sync host prerequisites and update Cockpit panel</li>
-          <li>Migrate database schema (with pre-update snapshot)</li>
-          <li>Update application files and configuration</li>
-          <li>Restart all application services and verify health</li>
-        </ul>
-        <p class="update-sudo-note">You can navigate away — the update will continue in the background.</p>
-        <p class="update-sudo-why">
-          The Linux administrator password (sudo) is used in the first step to sync host prerequisites and refresh the Cockpit panel, and is cleared from memory immediately after.
+        <p class="update-sudo-backup-warning">
+          We highly recommend creating a Full Backup or VM snapshot before updating.
         </p>
-        <label class="update-sudo-label">Sudo password</label>
-        <input type="password" id="sudo-password-input" class="update-sudo-input" autocomplete="current-password" placeholder="required to update Cockpit panels" />
+        <p class="update-sudo-why">
+          Services will briefly restart; the update continues in the background. Sudo is used once to update host packages and Cockpit, then cleared.
+        </p>
+        <label class="update-sudo-label" for="sudo-password-input">Sudo password</label>
+        <input type="password" id="sudo-password-input" class="update-sudo-input" autocomplete="current-password" placeholder="Linux administrator password" />
         <p id="sudo-error" class="update-sudo-error hidden">Incorrect password. Please try again.</p>
         <div class="update-sudo-actions">
           <button type="button" id="btn-sudo-cancel" class="update-btn update-btn-secondary">Cancel</button>

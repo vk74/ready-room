@@ -1,4 +1,4 @@
-/* Version: 0.26.3
+/* Version: 0.28.3
  * Purpose: Main logic for the Cockpit updates panel.
  * Handles check for updates (list releases), download of the selected release, delete of the staged kit,
  * and install of the staged kit (detached + polling).
@@ -7,6 +7,9 @@
  * State machine: IDLE | INSTALLING | FINISHED_SUCCESS | FINISHED_FAILED.
  * On init, calls update-progress first to reconnect to an in-progress update if any.
  * Cockpit package; filename: update.js
+ *
+ * Changes in v0.28.3:
+ * - Removed GitHub access key status and save handlers (`github-token-status`, `set-github-token`).
  *
  * Changes in v0.26.3:
  * - Install progress and output stay in the panel. Removed the full-screen overlay and Dismiss button.
@@ -197,8 +200,7 @@
     releasesList: [],          // array of release objects from list-releases
     selectedVersion: null,     // version string selected by user in the list
     confirmedInstallVersion: '', // staged version shown in the sudo modal for this install
-    sudoPassword: null,        // held in memory only until start-update reads it
-    githubTokenConfigured: false
+    sudoPassword: null         // held in memory only until start-update reads it
   };
 
   var outputRawText = '';
@@ -702,7 +704,6 @@
   function checkForUpdates() {
     if (state.operationRunning || state.uiState === 'INSTALLING') return;
     resetFinishedState();
-    loadGithubTokenStatus();
 
     state.operationRunning = true;
     state.releasesList = [];
@@ -1081,100 +1082,8 @@
     els.progressFill.classList.remove('update-progress-indeterminate');
   }
 
-  /* =====================================================================
-   * GitHub access key — status badge and save (token never stored on state)
-   * ===================================================================== */
-
-  function updateGithubTokenBadge() {
-    if (!els.githubTokenBadge) return;
-    if (state.githubTokenConfigured) {
-      els.githubTokenBadge.textContent = 'Key saved';
-      els.githubTokenBadge.className = 'update-badge update-badge-success';
-    } else {
-      els.githubTokenBadge.textContent = 'Key not set';
-      els.githubTokenBadge.className = 'update-badge update-badge-neutral';
-    }
-  }
-
-  function showGithubTokenMsg(kind, text) {
-    if (!els.githubTokenMsg) return;
-    els.githubTokenMsg.textContent = text;
-    els.githubTokenMsg.className = 'update-github-msg update-github-msg-' + kind;
-  }
-
-  function loadGithubTokenStatus() {
-    var proc = cockpit.spawn([DISPATCH_PATH, 'github-token-status'], {
-      err: 'out'
-    });
-
-    proc.then(function (data) {
-      try {
-        var result = JSON.parse(data);
-        state.githubTokenConfigured = result.configured === true;
-      } catch (e) {
-        state.githubTokenConfigured = false;
-      }
-      updateGithubTokenBadge();
-    });
-
-    proc.catch(function () {
-      state.githubTokenConfigured = false;
-      updateGithubTokenBadge();
-    });
-  }
-
-  function saveGithubToken() {
-    if (!els.githubTokenInput) return;
-
-    var token = (els.githubTokenInput.value || '').trim();
-    if (!token) {
-      showGithubTokenMsg('error', 'Paste a key before saving.');
-      return;
-    }
-
-    var proc = cockpit.spawn([DISPATCH_PATH, 'set-github-token'], { err: 'out' });
-    proc.input(token + '\n');
-    els.githubTokenInput.value = '';
-
-    proc.then(function (data) {
-      var result = {};
-      try {
-        var text = (data || '').toString();
-        var start = text.lastIndexOf('{');
-        result = JSON.parse(start >= 0 ? text.slice(start) : text);
-      } catch (e) {
-        showGithubTokenMsg('error', 'Could not save the key.');
-        return;
-      }
-
-      if (result.status === 'ok') {
-        state.githubTokenConfigured = true;
-        updateGithubTokenBadge();
-        var extras = [];
-        if (result.ghcrLogin === 'failed') {
-          extras.push('image registry login did not finish');
-        }
-        if (result.workerRestart === 'failed') {
-          extras.push('worker restart did not finish');
-        }
-        if (extras.length) {
-          showGithubTokenMsg('warning', 'Key saved. Warning: ' + extras.join('; ') + '.');
-        } else {
-          showGithubTokenMsg('success', 'Key saved.');
-        }
-      } else {
-        showGithubTokenMsg('error', 'Could not save the key.');
-      }
-    });
-
-    proc.catch(function () {
-      showGithubTokenMsg('error', 'Could not save the key.');
-    });
-  }
-
   function refreshSystemState() {
     loadStatus();
-    loadGithubTokenStatus();
   }
 
   function isUpdatesSectionVisible() {
@@ -1220,10 +1129,6 @@
     els.chkBeta = document.getElementById('chk-beta');
     els.releasesWrapper = document.getElementById('releases-list-wrapper');
     els.releasesList = document.getElementById('releases-list');
-    els.githubTokenBadge = document.getElementById('github-token-badge');
-    els.githubTokenInput = document.getElementById('github-token-input');
-    els.btnGithubTokenSave = document.getElementById('btn-github-token-save');
-    els.githubTokenMsg = document.getElementById('github-token-msg');
 
     els.btnCheck.addEventListener('click', checkForUpdates);
     els.btnDownload.addEventListener('click', downloadUpdate);
@@ -1258,18 +1163,6 @@
         if (e.key === 'Escape') hideSudoModal();
       });
     }
-    if (els.btnGithubTokenSave) {
-      els.btnGithubTokenSave.addEventListener('click', saveGithubToken);
-    }
-    if (els.githubTokenInput) {
-      els.githubTokenInput.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          saveGithubToken();
-        }
-      });
-    }
-    loadGithubTokenStatus();
     if (els.chkBeta) {
       els.chkBeta.addEventListener('change', function () {
         state.includeBeta = els.chkBeta.checked;

@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# version: 1.4.1
+# version: 0.28.3
 # Package every skill into a base64-encoded tarball plus a per-skill sha256
 # manifest under agent-skills/dist/. These artifacts let agents with
 # content-filtering file-write APIs install skills losslessly: download or
 # paste the .b64 text, decode it, and verify integrity with the manifest
 # instead of retyping scripts (which corrupts $-patterns).
 # File: pack-skills.sh
+#
+# Changes in v0.28.3:
+# - Added role-service-admin, role-service-auditor, role-service-practice-manager, and role-service-coordinator to the skills packaging list.
 #
 # Changes in v1.4.1:
 # - Renamed skills evi-* → role-*; sync/pack targets and lib script names updated (role-auth.sh / role-request.sh / role-setup.sh).
@@ -35,7 +38,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILLS_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DIST_DIR="${SKILLS_ROOT}/dist"
-SKILLS=(role-auth role-attachments role-kb-reader role-kb-author role-kb-admin role-admin-products-auditor role-admin-products-editor role-admin-products-specialist role-admin-products-admin)
+SKILLS=(role-auth role-attachments role-kb-reader role-kb-author role-kb-admin role-admin-products-auditor role-admin-products-editor role-admin-products-specialist role-admin-products-admin role-service-admin role-service-auditor role-service-practice-manager role-service-coordinator)
 
 die() {
   echo "pack-skills: $*" >&2

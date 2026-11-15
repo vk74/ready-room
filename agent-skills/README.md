@@ -1,10 +1,15 @@
 # evi Agent Skills
 
 <!--
-version: 0.27.4
+version: 0.28.3
 Short description: Index of external vendor-neutral evi agent skills.
 File: README.md
-Last release: 0.27.4
+Last release: 0.28.3
+
+Changes in v0.28.3:
+- Registered role-service-admin, role-service-auditor, role-service-practice-manager, and role-service-coordinator in the skills table (last release 0.28.3).
+- Added Service roles composition and a route-to-skill endpoint index.
+- Added service-role smoke steps and directory layout entries.
 
 Changes in v0.27.4:
 - Sparse-checkout and raw-download examples use the public distribution repository vk74/ready-room.
@@ -133,11 +138,16 @@ This directory lives at the repository root (`agent-skills/`) so hosts can point
 | [role-admin-products-editor](role-admin-products-editor/SKILL.md) | 0.26.2 | Editor: read-all + update/import + placement/status/bulk helpers for products and lines |
 | [role-admin-products-specialist](role-admin-products-specialist/SKILL.md) | 0.26.2 | Specialist: read-own + create/update/assign-owner-own + placement/status/bulk helpers |
 | [role-admin-products-admin](role-admin-products-admin/SKILL.md) | 0.26.2 | Admin: full adminProducts scope including placement/status/bulk, clear-all, settings |
+| [role-service-admin](role-service-admin/SKILL.md) | 0.28.3 | Service Administrator (`role.adminServices.admin`): catalog services CRUD/assign-owner, work-item forms & versions lifecycle, and `AdminApp.{Services,Forms,Practices}` settings |
+| [role-service-auditor](role-service-auditor/SKILL.md) | 0.28.3 | Service Auditor (`role.service.auditor`): read-only oversight across catalog services, work-item forms, service settings, and all Work service requests, activities, and discussion chats |
+| [role-service-practice-manager](role-service-practice-manager/SKILL.md) | 0.28.3 | Service Practice Manager (`role.service.practiceManager`): operational control across all Work service requests and manual tasks, assigned approvals/acceptances, escalation to company head, and requester discussion chat |
+| [role-service-coordinator](role-service-coordinator/SKILL.md) | 0.28.3 | Service Coordinator (`role.service.coordinator`): operational coordination across all Work service requests and manual tasks, escalation to practice managers / support tiers / company head, assigned approvals/acceptances, and requester discussion chat |
 
 Each skill's `SKILL.md` frontmatter includes `last_release` — the evi app
 release when that skill was last updated. Bump it whenever the skill changes
-ship with an evi release. `role-kb-reader` and `role-kb-author` are marked
-`0.27.3`. The other skills in this index are marked `0.26.2`.
+ship with an evi release. The four service skills are marked `0.28.3`.
+`role-kb-reader` and `role-kb-author` are marked `0.27.3`. The other skills
+in this index are marked `0.26.2`.
 
 More skills will be added here as separate directories.
 
@@ -203,6 +213,66 @@ Route-to-skill coverage matrix:
 | `GET /api/admin/products/clear-all/status/:operationId` | no | no | no | yes |
 | `GET /api/core/settings` | yes (`adminProducts.*` read) | no | no | yes |
 | `POST /api/admin/settings/update` (`AdminProducts` section) | no | no | no | yes |
+
+### Service roles composition
+
+Each service role is a standalone skill. These skills do not stack.
+
+- **Service auditor** (`role.service.auditor`): `role-service-auditor`
+- **Service practice manager** (`role.service.practiceManager`): `role-service-practice-manager`
+- **Service coordinator** (`role.service.coordinator`): `role-service-coordinator`
+- **Service administrator** (`role.adminServices.admin`): `role-service-admin`
+
+File listing on a service request, a manual task, or an acceptance stays in `role-attachments`. Practice manager and coordinator wrap the same Work and discussion routes. The practice manager is the escalation head. The coordinator runs the queue.
+
+### Service roles endpoint index
+
+Route-to-skill coverage matrix. Approval and acceptance updates are allowed only when `can_manage` is true (the caller, or one of the caller's groups, is the assignee). `service:requests:update:all` does not set that flag. It does set `can_manage` on every manual task.
+
+| Endpoint | Auditor | Practice Manager | Coordinator | Admin |
+|---|---|---|---|---|
+| `GET /api/admin/app/services/fetchallservices` | yes | no | no | yes |
+| `GET /api/admin/app/services/fetchsingleservice` | yes | no | no | yes |
+| `GET /api/admin/app/services/services/search` | yes | no | no | yes |
+| `GET /api/admin/app/services/forms/search` | yes | no | no | yes |
+| `GET /api/admin/app/services/catalog-section-options` | yes | no | no | yes |
+| `POST /api/admin/app/services/create` | no | no | no | yes |
+| `POST /api/admin/app/services/update` | no | no | no | yes |
+| `POST /api/admin/app/services/deleteservices` | no | no | no | yes |
+| `POST /api/admin/app/services/assign-owner` | no | no | no | yes |
+| `GET /api/admin/app/forms/fetch-all` | yes | no | no | yes |
+| `GET /api/admin/app/forms/:id` | yes | no | no | yes |
+| `GET /api/admin/app/forms/regions` | yes | no | no | yes |
+| `POST /api/admin/app/forms/create` | no | no | no | yes |
+| `PUT /api/admin/app/forms/:id` | no | no | no | yes |
+| `PUT /api/admin/app/forms/:id/catalog` | no | no | no | yes |
+| `DELETE /api/admin/app/forms/:id` | no | no | no | yes |
+| `POST /api/admin/app/forms/:id/draft` | no | no | no | yes |
+| `PUT /api/admin/app/forms/versions/:id` | no | no | no | yes |
+| `POST /api/admin/app/forms/versions/:id/publish` | no | no | no | yes |
+| `DELETE /api/admin/app/forms/versions/:id` | no | no | no | yes |
+| `GET /api/core/settings` | yes (`AdminApp.Services`, `AdminApp.Forms`, `AdminApp.Practices`) | yes (`AdminApp.Practices`) | yes (`AdminApp.Practices`) | yes |
+| `POST /api/admin/settings/update` | no | no | no | yes (`AdminApp.Services`, `AdminApp.Forms`, `AdminApp.Practices`) |
+| `GET /api/work/requests` | yes | yes | yes | no |
+| `GET /api/work/requests/:id` | yes | yes | yes | no |
+| `PATCH /api/work/requests/:id/work` | no | yes | yes | no |
+| `GET /api/work/services/search` | yes | yes | yes | no |
+| `GET /api/work/activities/manual-tasks` | yes | yes | yes | no |
+| `GET /api/work/activities/manual-tasks/:id` | yes | yes | yes | no |
+| `PATCH /api/work/activities/manual-tasks/:id` | no | yes | yes | no |
+| `GET /api/work/activities/approvals` | yes | yes | yes | no |
+| `GET /api/work/activities/approvals/:id` | yes | yes | yes | no |
+| `PATCH /api/work/activities/approvals/:id` | no | yes (assigned) | yes (assigned) | no |
+| `GET /api/work/activities/acceptances` | yes | yes | yes | no |
+| `GET /api/work/activities/acceptances/:id` | yes | yes | yes | no |
+| `PATCH /api/work/activities/acceptances/:id` | no | yes (assigned) | yes (assigned) | no |
+| `GET /api/communications/entity/service_request/:id/channels/requester` | yes | yes | yes | no |
+| `POST /api/communications/entity/service_request/:id/channels/requester/messages` | no | yes | yes | no |
+| `PATCH /api/communications/messages/:id` | no | yes | yes | no |
+| `DELETE /api/communications/messages/:id` | no | yes | yes | no |
+| `POST /api/communications/conversations/:id/read` | no | yes | yes | no |
+| `GET /api/core/item-selector/search-users` | no | yes | yes | yes |
+| `GET /api/core/item-selector/search-groups` | no | yes | yes | yes |
 
 ## Connect skills to your host
 
@@ -343,8 +413,15 @@ Real environment variables always take precedence over `role.env` values.
 25. Verify products editor skill with `role-admin-products-editor/scripts/admin-product-lines-update.sh <payload.json>`.
 26. Verify products bulk-status with `role-admin-products-editor/scripts/admin-products-bulk-status.sh <payload.json>`.
 27. Verify products admin skill with `role-admin-products-admin/scripts/admin-products-settings-get.sh` (requires `adminProducts:settings:read:all` or update permission).
-28. After skill changes: run `bash agent-skills/tools/sync-lib.sh --check` and verify `dist/*.sha256` manifests match regenerated bundles. Do not reconstruct scripts; install from download or `dist/`.
-29. Optional: force an expired token and verify auto re-auth on next request.
+28. Verify service admin skill with `role-service-admin/scripts/admin-services-list.sh`.
+29. Verify service admin forms with `role-service-admin/scripts/admin-forms-list.sh`.
+30. Verify service admin settings with `role-service-admin/scripts/admin-services-settings-get.sh`.
+31. Verify service auditor catalog read with `role-service-auditor/scripts/admin-services-list.sh`.
+32. Verify service auditor request read with `role-service-auditor/scripts/work-requests-list.sh`.
+33. Verify service practice manager skill with `role-service-practice-manager/scripts/work-requests-list.sh`.
+34. Verify service coordinator skill with `role-service-coordinator/scripts/work-requests-list.sh`.
+35. After skill changes: run `bash agent-skills/tools/sync-lib.sh --check` and verify `dist/*.sha256` manifests match regenerated bundles. Do not reconstruct scripts; install from download or `dist/`.
+36. Optional: force an expired token and verify auto re-auth on next request.
 
 ## Directory layout
 
@@ -398,7 +475,27 @@ agent-skills/
 │   ├── scripts/
 │   │   └── _lib/
 │   └── references/
-└── role-admin-products-admin/
+├── role-admin-products-admin/
+│   ├── SKILL.md
+│   ├── scripts/
+│   │   └── _lib/
+│   └── references/
+├── role-service-admin/
+│   ├── SKILL.md
+│   ├── scripts/
+│   │   └── _lib/
+│   └── references/
+├── role-service-auditor/
+│   ├── SKILL.md
+│   ├── scripts/
+│   │   └── _lib/
+│   └── references/
+├── role-service-practice-manager/
+│   ├── SKILL.md
+│   ├── scripts/
+│   │   └── _lib/
+│   └── references/
+└── role-service-coordinator/
     ├── SKILL.md
     ├── scripts/
     │   └── _lib/
