@@ -1,10 +1,11 @@
 ---
 name: role-service-auditor
 description: >
-  Read-only service auditor skill for evi. Covers catalog services, work-item
-  forms, service and practices settings, and runtime Work service requests,
-  manual tasks, approvals, acceptances, and the requester discussion channel
-  for bots mapped to role.service.auditor.
+  Read-only design-time service auditor skill. Wraps catalog services,
+  work-item forms, and service settings. Use with the read scripts of the
+  work, communications, and attachments skills for bots mapped to
+  role.service.auditor, where service:requests:read:all grants full
+  read-only visibility across all rows.
 last_release: "0.28.3"
 compatibility: Requires curl, jq, and network access to the evi instance. Self-contained — auth helper scripts are vendored in scripts/_lib (set REQUEST_SCRIPT to override).
 required_environment_variables:
@@ -34,16 +35,17 @@ required_environment_variables:
 
 <!--
 version: 0.28.3
-Short description: Read-only service auditor methods for external agents.
+Short description: Design-time read methods for the service auditor, composed with work, chat, and file reads.
 File: SKILL.md
 Last release: 0.28.3
 
 Changes in v0.28.3:
 - Initial skill for system group role.service.auditor.
-- Read-only catalog service, work-item form, settings, Work runtime, and requester-channel scripts.
+- Design-time reads of catalog services, work-item forms, and service settings (`/api/admin/app/services/*`, `/api/admin/app/forms/*`, `GET /api/core/settings`).
+- Runtime oversight composes the read scripts of the work skills, `role-communications` (`chat-channel-get.sh` on channel `requester`), and `role-attachments` (`fs-files-list.sh`). `service:requests:read:all` is full read-only visibility across all rows.
 -->
 
-Read-only oversight for bots assigned to `role.service.auditor` (Role Service Auditors).
+Read-only design-time oversight for bots assigned to `role.service.auditor` (Role Service Auditors). Runtime rows, the requester channel, and file lists come from the composed skills below.
 
 Run the scripts that ship in this skill directory. Do not recreate them by writing their source back out. Install the skill by direct download or, once the pack bundle exists, by `base64 -d | tar xz`.
 
@@ -61,17 +63,24 @@ Permissions the group holds:
 
 `settings:read:common` is held through `role.users.registered` (every registered account, including bots). It is not a grant on `role.service.auditor` itself.
 
-`adminServices:items:read:all` satisfies the admin route gate `adminServices:items:read`. `service:requests:read:all` removes the per-row visibility filter on Work service requests, manual tasks, approvals, and acceptances, and it allows reading the service-request `requester` discussion channel. It does not grant `service:requests:update:all`.
+`adminServices:items:read:all` satisfies the admin route gate `adminServices:items:read`. `service:requests:read:all` removes the per-row visibility filter on Work service requests, manual tasks, approvals, and acceptances, and it allows reading the service-request `requester` discussion channel. Those runtime reads are the composed skills below. This permission does not grant `service:requests:update:all`.
 
 ## Role composition
 
+`role.service.auditor` is `role-auth` plus this skill plus the read scripts of the work skills, `role-communications`, and `role-attachments`. `service:requests:read:all` grants full read-only visibility across all rows.
+
 - `role-auth` obtains and refreshes the JWT. This skill never calls `/api/*` except through `role-request.sh`.
-- File listing stays in `role-attachments` (`GET /api/fs`). This skill does not duplicate those scripts.
-- One skill per role: do not split these reads across another service skill.
+- This skill wraps the design-time reads: `/api/admin/app/services/*`, `/api/admin/app/forms/*`, and `GET /api/core/settings`.
+- Service requests: the read scripts of `role-work-service-requests` — `work-requests-list.sh`, `work-requests-get.sh`, `work-services-search.sh`, and `work-practices-settings-get.sh`. Do not run the update, assign, status, watcher, or cancel scripts.
+- Manual tasks: the read scripts of `role-work-manual-activities` — `work-manual-tasks-list.sh` and `work-manual-tasks-get.sh`. Do not run `work-manual-tasks-update.sh` or `work-manual-tasks-attachments-add.sh`.
+- Approvals: the read scripts of `role-work-approvals` — `work-approvals-list.sh` and `work-approvals-get.sh`. Do not run `work-approvals-update.sh`.
+- Acceptances: the read scripts of `role-work-acceptances` — `work-acceptances-list.sh` and `work-acceptances-get.sh`. Do not run `work-acceptances-update.sh` or `work-acceptances-attachments-add.sh`.
+- Discussion: `role-communications` `chat-channel-get.sh` on channel `requester` (`chat-channel-get.sh service_request <request_uuid> requester`). Read-all can read that channel and cannot post. Do not post, edit, delete, react, pin, or mark the conversation read. The `internal` channel stays closed unless this bot also has `can_manage`.
+- Files: `role-attachments` `fs-files-list.sh`. Do not upload or delete.
 
 ## Scope
 
-Design-time reads:
+Design-time reads wrapped by this skill:
 
 - `adminServices.items.list` -> `GET /api/admin/app/services/fetchallservices`
 - `adminServices.items.get` -> `GET /api/admin/app/services/fetchsingleservice`
@@ -83,27 +92,24 @@ Design-time reads:
 - `adminServices.forms.regions` -> `GET /api/admin/app/forms/regions`
 - `adminServices.settings.read` -> `GET /api/core/settings`
 
-Runtime reads:
+Runtime reads are the composed skills, not scripts in this directory:
 
-- `work.requests.list` -> `GET /api/work/requests`
-- `work.requests.get` -> `GET /api/work/requests/:id`
-- `work.services.search` -> `GET /api/work/services/search`
-- `work.manualTasks.list` -> `GET /api/work/activities/manual-tasks`
-- `work.manualTasks.get` -> `GET /api/work/activities/manual-tasks/:id`
-- `work.approvals.list` -> `GET /api/work/activities/approvals`
-- `work.approvals.get` -> `GET /api/work/activities/approvals/:id`
-- `work.acceptances.list` -> `GET /api/work/activities/acceptances`
-- `work.acceptances.get` -> `GET /api/work/activities/acceptances/:id`
-- `work.requests.requesterChannel.get` -> `GET /api/communications/entity/service_request/:id/channels/requester`
+- `GET /api/work/requests`, `GET /api/work/requests/:id`, `GET /api/work/services/search`, and the practices slice of `GET /api/core/settings` -> `role-work-service-requests`
+- `GET /api/work/activities/manual-tasks` and `GET /api/work/activities/manual-tasks/:id` -> `role-work-manual-activities`
+- `GET /api/work/activities/approvals` and `GET /api/work/activities/approvals/:id` -> `role-work-approvals`
+- `GET /api/work/activities/acceptances` and `GET /api/work/activities/acceptances/:id` -> `role-work-acceptances`
+- `GET /api/communications/entity/service_request/:id/channels/requester` -> `role-communications`
+- `GET /api/fs` -> `role-attachments`
 
-Explicitly excluded:
+Explicitly excluded from this skill:
 
-- Every write on services, forms, settings, Work, and communications (`POST`, `PUT`, `PATCH`, `DELETE`), including service create/update/delete/assign-owner, form create/update/delete/catalog/draft/publish, request work-tab update and cancel, activity updates, and posting or editing chat messages
+- Every write on services, forms, and settings (`POST`, `PUT`, `PATCH`, `DELETE`), including service create/update/delete/assign-owner and form create/update/delete/catalog/draft/publish
+- Work writes (work-tab update, assign, status, watchers, cancel, activity updates) and communications writes (post, edit, delete, reaction, pin, read cursor)
 - The service-request `internal` discussion channel
 - All `/api/admin/app/processes/*` routes
 - Upload and delete in `role-attachments` (listing only; this role has no `service:requests:update:all`)
 
-A service-request detail may include a linked `process_instance`. That is payload on the Work read. It is not a call to the processes API.
+A service-request detail from `role-work-service-requests` may include a linked `process_instance`. That is payload on the Work read. It is not a call to the processes API.
 
 ## Settings the bulk read returns
 
@@ -159,23 +165,16 @@ JWT is obtained and refreshed by shared auth scripts (vendored at `scripts/_lib/
 - `scripts/admin-forms-get.sh <form_uuid>`
 - `scripts/admin-forms-regions.sh`
 - `scripts/admin-services-settings-get.sh`
-- `scripts/work-requests-list.sh [--scope mine|assigned|team|unassigned|all] [--search "<text>"] [--status new|in_progress|paused|resolved|reopened|closed|cancelled|failed] [--urgency low|medium|high|critical] [--service-id <uuid>] [--assignee all|me|unassigned|user] [--assigned-user-id <uuid>] [--assigned-group-id <uuid>] [--requester all|me|user] [--requester-user-id <uuid>] [--language english|russian] [--page N] [--items-per-page N] [--sort-by created_at|request_number|status|urgency|title|priority|service|form|requester|requested_for|assignee|group|resolved_at|closed_at|estimated_minutes|actual_minutes|activities_estimated_minutes|activities_actual_minutes|total_estimated_minutes|total_actual_minutes] [--sort-desc]`
-- `scripts/work-requests-get.sh <request_uuid> [--language english|russian]`
-- `scripts/work-services-search.sh <query> [--limit N] [--language english|russian]`
-- `scripts/work-manual-tasks-list.sh [--scope assigned|team|unassigned|all] [--search "<text>"] [--status new|in_progress|paused|complete] [--assignee all|me|unassigned|user] [--assigned-user-id <uuid>] [--assigned-group-id <uuid>] [--page N] [--items-per-page N] [--sort-by created_at|task_number|title|status|assignee|group|completed_at|parent|estimated_minutes|actual_minutes|wbs_code|phase|work_stream|planned_start_at|planned_end_at|started_at] [--sort-desc]`
-- `scripts/work-manual-tasks-get.sh <task_uuid>`
-- `scripts/work-approvals-list.sh [--scope assigned|team|unassigned|all] [--search "<text>"] [--status new|in_progress|paused|complete] [--assignee all|me|unassigned|user] [--assigned-user-id <uuid>] [--assigned-group-id <uuid>] [--language english|russian] [--page N] [--items-per-page N] [--sort-by created_at|approval_number|title|status|assignee|group|completed_at|parent|wbs_code|phase|work_stream|planned_start_at|planned_end_at|started_at] [--sort-desc]`
-- `scripts/work-approvals-get.sh <approval_uuid> [--language english|russian]`
-- `scripts/work-acceptances-list.sh [--scope assigned|team|unassigned|all] [--search "<text>"] [--status new|in_progress|complete] [--assignee all|me|unassigned|user] [--assigned-user-id <uuid>] [--assigned-group-id <uuid>] [--page N] [--items-per-page N] [--sort-by created_at|acceptance_number|title|status|assignee|group|completed_at|parent|wbs_code|phase|work_stream|planned_start_at|planned_end_at|started_at] [--sort-desc]`
-- `scripts/work-acceptances-get.sh <acceptance_uuid>`
-- `scripts/work-request-chat-get.sh <request_uuid> [--page N] [--items-per-page N]`
 
-`--status` and `--urgency` on `work-requests-list.sh` may be repeated. Each value is sent as its own `status` or `urgency` query parameter. The same repeat rule applies to `--status` on the service list and the activity lists, and to `--status`, `--kind`, `--catalog-status`, and `--catalog-binding` on the forms list.
-
-`--assignee user` does nothing unless `--assigned-user-id` is set. `--requester user` does nothing unless `--requester-user-id` is set. A Work list `--search` shorter than 2 characters is ignored by the server.
+`--status` on `admin-services-list.sh` may be repeated. Each value is sent as its own `status` query parameter. The same repeat rule applies to `--status`, `--kind`, `--catalog-status`, and `--catalog-binding` on the forms list.
 
 ## References
 
 - [API contract](references/api-contract.md)
 - [Auth skill](../role-auth/SKILL.md)
+- [Work service requests](../role-work-service-requests/SKILL.md)
+- [Work manual activities](../role-work-manual-activities/SKILL.md)
+- [Work approvals](../role-work-approvals/SKILL.md)
+- [Work acceptances](../role-work-acceptances/SKILL.md)
+- [Communications skill](../role-communications/SKILL.md)
 - [Attachments skill](../role-attachments/SKILL.md)

@@ -40,7 +40,8 @@ Last release: 0.28.3
 
 Changes in v0.28.3:
 - Initial skill for role.adminServices.admin: service CRUD, form lifecycle,
-  catalog binding, owner assignment, item-selector search, and settings.
+  catalog binding, owner assignment, and settings.
+- Directory user and group search is role-auth (`role-auth/scripts/core-search-users.sh`, `role-auth/scripts/core-search-groups.sh`).
 -->
 
 Standalone services admin skill for bots assigned to `role.adminServices.admin`
@@ -66,6 +67,11 @@ Permissions held by that group:
 `settings:read:common` comes from `role.users.registered`. It can read
 `AdminApp.Practices` and the system settings sections. Updating
 `AdminApp.Practices` still requires `adminServices:settings:update:all`.
+
+## Role composition
+
+- `role-auth` obtains and refreshes the JWT. Every script calls `/api/*` only through `role-request.sh`.
+- Directory search is not in this skill. Pick a user or a group with `role-auth/scripts/core-search-users.sh` and `role-auth/scripts/core-search-groups.sh` before create, update, or assign-owner. Queries must be at least 2 characters. `--include-bots` sends `include_bots=true`. `--exclude-system` sends `exclude_system=true`. Omitted flags are not sent. Owner and dispatcher accept an active standard or bot username. Support tiers accept an active non-system group name.
 
 ## Scope
 
@@ -93,8 +99,6 @@ Included methods:
 - `adminServices.forms.version.discard` -> `DELETE /api/admin/app/forms/versions/<version_uuid>`
 - `adminServices.settings.read` -> `GET /api/core/settings`
 - `adminServices.settings.update` -> `POST /api/admin/settings/update`
-- `core.itemSelector.searchUsers` -> `GET /api/core/item-selector/search-users`
-- `core.itemSelector.searchGroups` -> `GET /api/core/item-selector/search-groups`
 
 Explicitly excluded:
 
@@ -224,12 +228,8 @@ All JSON-body requests send `Content-Type: application/json` (scripts set this a
 - `scripts/admin-forms-version-discard.sh <version_uuid>`
 - `scripts/admin-services-settings-get.sh`
 - `scripts/admin-services-settings-update.sh <payload.json>`
-- `scripts/core-search-users.sh <query> [--limit N] [--include-bots] [--exclude-system]`
-- `scripts/core-search-groups.sh <query> [--limit N] [--exclude-system]`
 
 `--status` on `admin-services-list.sh` may be repeated. Each value is sent as its own `status` query parameter.
-
-User and group search queries must be at least 2 characters. `--include-bots` sends `include_bots=true`. `--exclude-system` sends `exclude_system=true`. Flags that are omitted are not sent.
 
 ## Usage examples
 
@@ -239,8 +239,8 @@ bash scripts/admin-services-get.sh "service-uuid"
 bash scripts/admin-services-search.sh "network" --limit 20 --language english
 bash scripts/admin-services-forms-search.sh --unbound --limit 20
 bash scripts/admin-services-catalog-section-options.sh
-bash scripts/core-search-users.sh "ann" --limit 10 --include-bots --exclude-system
-bash scripts/core-search-groups.sh "support" --exclude-system
+bash role-auth/scripts/core-search-users.sh "ann" --limit 10 --include-bots --exclude-system
+bash role-auth/scripts/core-search-groups.sh "support" --exclude-system
 
 bash scripts/admin-services-create.sh ./payloads/create-service.json
 bash scripts/admin-services-update.sh ./payloads/update-service.json

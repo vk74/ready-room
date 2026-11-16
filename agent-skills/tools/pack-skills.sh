@@ -8,7 +8,7 @@
 # File: pack-skills.sh
 #
 # Changes in v0.28.3:
-# - Added role-service-admin, role-service-auditor, role-service-practice-manager, and role-service-coordinator to the skills packaging list.
+# - Packaged skills: role-communications, role-service-admin, role-service-auditor, role-work-service-requests, role-work-manual-activities, role-work-approvals, role-work-acceptances.
 #
 # Changes in v1.4.1:
 # - Renamed skills evi-* → role-*; sync/pack targets and lib script names updated (role-auth.sh / role-request.sh / role-setup.sh).
@@ -38,7 +38,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILLS_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DIST_DIR="${SKILLS_ROOT}/dist"
-SKILLS=(role-auth role-attachments role-kb-reader role-kb-author role-kb-admin role-admin-products-auditor role-admin-products-editor role-admin-products-specialist role-admin-products-admin role-service-admin role-service-auditor role-service-practice-manager role-service-coordinator)
+SKILLS=(role-auth role-attachments role-communications role-kb-reader role-kb-author role-kb-admin role-admin-products-auditor role-admin-products-editor role-admin-products-specialist role-admin-products-admin role-service-admin role-service-auditor role-work-service-requests role-work-manual-activities role-work-approvals role-work-acceptances)
 
 die() {
   echo "pack-skills: $*" >&2

@@ -2,12 +2,13 @@
 
 <!--
 version: 0.28.3
-Short description: Endpoint contract for role-service-admin (services, forms, settings, item selector).
+Short description: Endpoint contract for role-service-admin (services, forms, settings).
 File: api-contract.md
 Last release: 0.28.3
 
 Changes in v0.28.3:
-- Initial contract for the role.adminServices.admin routes wrapped by this skill.
+- Initial contract for the role.adminServices.admin routes wrapped by this skill: services, forms, and settings.
+- User and group search is role-auth (`GET /api/core/item-selector/search-users`, `GET /api/core/item-selector/search-groups`).
 -->
 
 Reference for `role-service-admin`.
@@ -67,7 +68,6 @@ This skill maps to `role.adminServices.admin`.
 | `GET /api/core/settings` for `AdminApp.Services` and `AdminApp.Forms` | `adminServices:settings:read:all` |
 | `GET /api/core/settings` for `AdminApp.Practices` and system sections | `adminServices:settings:read:all` or `settings:read:common` |
 | `POST /api/admin/settings/update` for `AdminApp.Services`, `AdminApp.Forms`, `AdminApp.Practices` | `adminServices:settings:update:all` |
-| User and group search | active authenticated user |
 
 The route gate stores the permission without the `:all` suffix (`adminServices:items:read`, and so on). The role grant is the `:all` key. Both match.
 
@@ -504,25 +504,14 @@ Success `ADM_STG-SUC-001`. `data` is the updated setting (`section_path`, `setti
 
 Another module's section returns `AZN-ERR-403`.
 
-## Item selector
+## Directory search
 
-Both routes require an active user. The query must be at least 2 characters. `limit` defaults to 20 and is clamped to 1–100. Shorter queries return `VAL-ERR-400`.
+User and group search is `role-auth`, not a script in this skill:
 
-### `GET /api/core/item-selector/search-users`
+- `role-auth/scripts/core-search-users.sh` -> `GET /api/core/item-selector/search-users`
+- `role-auth/scripts/core-search-groups.sh` -> `GET /api/core/item-selector/search-groups`
 
-Query: `query`, `limit`, and, only when the flags are set, `include_bots=true` and `exclude_system=true`.
-
-Without `--include-bots` the search omits bots. `--exclude-system` omits system principals. Use both when picking a service owner or dispatcher: those fields accept an active standard or bot username and reject system accounts.
-
-Success `ISL-SUC-001`: `data.items[]` of `{ "uuid", "name", "username", "status" }` and `data.total`. For users, `name` is the profile display name, with username as fallback. `status` is `account_status`.
-
-### `GET /api/core/item-selector/search-groups`
-
-Query: `query`, `limit`, and `exclude_system=true` when `--exclude-system` is set.
-
-Support tiers accept an active non-system group name. Pass `--exclude-system` for that picker.
-
-Success `ISL-SUC-001`. Group items set `username` equal to `name`. `status` is empty.
+Use both flags (`--include-bots` and `--exclude-system`) when picking a service owner or dispatcher. Pass `--exclude-system` when picking a support-tier group. The request and response shapes are in the `role-auth` contract.
 
 ## Non-goals
 
@@ -532,5 +521,6 @@ This skill does not call:
 - product, catalog, knowledge-base, or organization admin routes
 - settings sections other than `AdminApp.Services`, `AdminApp.Services.Fs.Quotas`, `AdminApp.Forms`, and `AdminApp.Practices`
 - `GET /api/public/settings` (public rows such as `allowed.languages` and card visibility are written through `POST /api/admin/settings/update` and are not returned by `GET /api/core/settings`)
+- `GET /api/core/item-selector/search-users` and `search-groups` (`role-auth`)
 - `GET /api/core/item-selector/search-organizations` and `search-participants`
 - attachment upload (`role-attachments` owns `/api/fs`)

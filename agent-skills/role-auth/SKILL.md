@@ -1,10 +1,13 @@
 ---
 name: role-auth
 description: >
-  Authenticate an evi bot agent with a bot API key and obtain a short-lived
-  Bearer JWT for subsequent evi API calls. Use before any other evi skill,
-  when starting a session, or after AUT-ERR-401 / BOT_AUTH-ERR-401.
-last_release: "0.26.2"
+  Authenticates a bot with an API key, caches and rotates a short-lived
+  Bearer JWT, and operates the in-app notifications inbox (including webhook
+  wake-up pings), subject mutes, and directory user and group search. Use
+  before any other skill, at session start, after AUT-ERR-401 or
+  BOT_AUTH-ERR-401, when a webhook wake-up ping arrives, or when listing,
+  reading, or muting notifications or looking up a user or group.
+last_release: "0.28.3"
 compatibility: Requires curl, jq, network access to the evi instance.
 required_environment_variables:
   - name: BASE_URL
@@ -28,10 +31,14 @@ required_environment_variables:
 # role-auth
 
 <!--
-version: 0.26.2
-Short description: Bot API-key exchange into JWT and authenticated request flow.
+version: 0.28.3
+Short description: Bot API-key exchange, JWT cache, notifications inbox, subject mutes, and directory search.
 File: SKILL.md
-Last release: 0.26.2
+Last release: 0.28.3
+
+Changes in v0.28.3:
+- Notifications inbox, subject mutes, directory search, and the webhook wake-up workflow.
+- Scope table and script map. Only role-auth.sh, role-request.sh, and role-setup.sh are vendored downstream.
 
 Changes in v0.26.2:
 - Renamed frontmatter key `last_evi_release` to `last_release` and set it to 0.26.2.
@@ -74,12 +81,17 @@ Changes in v1.1.0:
 
 Authenticate a bot principal against evi and cache a Bearer access token for later API calls. Bots do not use `/api/auth/login` or refresh tokens — they exchange the API key again when the JWT expires or is invalidated.
 
+The same skill lists and updates the in-app notifications inbox, mutes subjects, and searches the user and group directory.
+
 ## When to Use
 
 - Before any evi API call from an external agent runtime
 - At the start of a new agent session that will touch evi
 - After `AUT-ERR-401` (expired or revoked JWT, token_version mismatch)
 - After `BOT_AUTH-ERR-401` (invalid, expired, or revoked API key)
+- When a webhook wake-up ping arrives, or when polling the unread inbox
+- When muting or unmuting a subject
+- When searching the directory for a user or a group
 
 Do **not** use `POST /api/auth/login` for bots — that endpoint rejects `account_type=bot`.
 
@@ -226,7 +238,7 @@ Expect `success: true` in the JSON envelope. The self-keys response lists `key_i
 Other evi skills (KB read, write, etc.) should:
 
 1. Assume `role-auth` has been run, or call `scripts/role-auth.sh` if the cache is missing or stale.
-2. Use `scripts/role-request.sh METHOD /api/...` for authenticated HTTP calls with automatic re-auth on 401. Dependent skills ship vendored copies of both scripts in their own `scripts/_lib/` directory and resolve the wrapper in this order: `REQUEST_SCRIPT` env override → local `scripts/_lib/role-request.sh` → `../../role-auth/scripts/role-request.sh` (monorepo layout). This keeps every skill self-contained in hosts that install skills into isolated directories.
+2. Use `scripts/role-request.sh METHOD /api/...` for authenticated HTTP calls with automatic re-auth on 401. Dependent skills ship vendored copies of `role-auth.sh`, `role-request.sh`, and `role-setup.sh` in their own `scripts/_lib/` directory and resolve the wrapper in this order: `REQUEST_SCRIPT` env override → local `scripts/_lib/role-request.sh` → `../../role-auth/scripts/role-request.sh` (monorepo layout). This keeps every skill self-contained in hosts that install skills into isolated directories. The notification and directory-search scripts are not vendored; call them from `role-auth/scripts/`.
 3. Send `Authorization: Bearer <JWT>` on every protected backend request.
 4. Read the cache at `${AGENT_HOME:-$HOME/.agent-skills}/cache/role-auth.json` if they need the token without shell export:
 
@@ -238,6 +250,106 @@ Other evi skills (KB read, write, etc.) should:
      "obtainedAt": 1709998000
    }
    ```
+
+## Scope
+
+| Concern | Method and route |
+| --- | --- |
+| Exchange an API key for a JWT | `POST /api/auth/bot/token` |
+| Authenticated call | `role-request.sh <METHOD> <path>` |
+| RBAC permission keys | `GET /api/auth/permissions` |
+| Own API key metadata | `GET /api/admin/org/bot/self/keys` |
+| List inbox | `GET /api/notifications/inbox` |
+| Read one notification | `GET /api/notifications/inbox/:id` |
+| Mark one notification read | `POST /api/notifications/inbox/:id/read` |
+| Mark one notification unread | `POST /api/notifications/inbox/:id/unread` |
+| Mark every notification read | `POST /api/notifications/inbox/read-all` |
+| Mark one subject read | `POST /api/notifications/inbox/read-by-subject` |
+| Delete one notification | `DELETE /api/notifications/inbox/:id` |
+| List subject mutes | `GET /api/notifications/mutes` |
+| Mute a subject | `POST /api/notifications/mutes` |
+| Remove a subject mute | `DELETE /api/notifications/mutes/:subjectType/:subjectId` |
+| Search users | `GET /api/core/item-selector/search-users` |
+| Search groups | `GET /api/core/item-selector/search-groups` |
+
+Not wrapped by this skill: `POST /api/notifications/email/send-test`, `GET /api/notifications/email/test-status`, and `GET /api/notifications/stream`.
+
+Only `role-auth.sh`, `role-request.sh`, and `role-setup.sh` are copied into downstream `scripts/_lib/`. The notification and directory-search scripts run from `role-auth/scripts/`. Each of those scripts resolves `role-request.sh` in this order:
+
+1. `REQUEST_SCRIPT` environment override
+2. `role-request.sh` in the same directory
+3. `scripts/_lib/role-request.sh`
+4. `../../role-auth/scripts/role-request.sh` (monorepo layout)
+
+## Webhook wake-up & Notifications Inbox workflow
+
+`send_bot_webhook` delivers a Strict Inbox Ping. The body is only a pointer. It does not include the title, module, or subject:
+
+```json
+{"notification_id":"<uuid>","bot_user_id":"<uuid>","occurred_at":"<RFC3339 timestamp>"}
+```
+
+A diagnostic ping is a different body and is not an inbox row:
+
+```json
+{"test":true,"bot_user_id":"<uuid>","occurred_at":"<RFC3339 timestamp>"}
+```
+
+When `test` is true, do not call `notifications-inbox-get.sh`.
+
+Every ping is an HTTP `POST` with `Content-Type: application/json`, `User-Agent: Webhook-Transport/1.0`, and `X-Notification-Idempotency-Key`. The other headers follow the channel preset:
+
+| Preset | Headers the receiver sees |
+| --- | --- |
+| `grok` | `Authorization: Bearer <key>` |
+| `hermes` | `X-Request-ID`. When a secret is configured, also `X-Webhook-Timestamp` (Unix seconds) and `X-Webhook-Signature-V2` (lowercase hex HMAC-SHA256 of `<timestamp>.<raw body>`, no `sha256=` prefix). |
+| `custom` | `X-Notification-Timestamp` (Unix seconds). When a secret is configured, also `X-Webhook-Signature-256` (`sha256=` plus the same lowercase hex HMAC-SHA256 of `<timestamp>.<raw body>`). |
+
+Treat a repeated `X-Notification-Idempotency-Key` as a delivery already accepted. The HMAC key is the channel secret. For `grok` that value is the bearer key, not an HMAC secret.
+
+Bot loop:
+
+1. Receive the wake-up ping and read `notification_id`. If no webhook is configured, poll with `notifications-inbox-list.sh --unread-only`.
+2. Fetch the row with `notifications-inbox-get.sh <notification_id>`.
+3. Inspect `module`, `event_type`, `subject_type`, `subject_id`, `subject_number`, `title`, and `meta`.
+4. Dispatch on `subject_type`:
+   - `service_request` → `role-work-service-requests`
+   - `manual_task` → `role-work-manual-activities`
+   - `approval` → `role-work-approvals`
+   - `acceptance` → `role-work-acceptances`
+   - `conversation`, or another communications entity type → `role-communications`
+   - `kb_article` → the knowledge-base skill for this bot
+5. Mark that notification read with `notifications-inbox-read.sh <notification_id>`, or mark every unread row for the subject with `notifications-inbox-read-by-subject.sh <subject_type> <subject_id>`.
+
+`meta` on a service request can include `status` and `priority`. On an activity it can include `status`, `parent_kind`, and `parent_id`. On a chat notification it can include `conversation_id` and `channel_key`.
+
+## Script map
+
+Auth (these three are the scripts vendored into downstream `scripts/_lib/`):
+
+- `scripts/role-setup.sh --base-url <url> --api-key <key> [--tls-insecure] [--ca-cert-file <path>] [--no-verify]`
+- `scripts/role-auth.sh`
+- `scripts/role-request.sh <METHOD> <path> [curl extra args...]`
+
+Notifications inbox and subject mutes (run from `role-auth/scripts/`, not from a vendored copy):
+
+- `scripts/notifications-inbox-list.sh [--unread-only] [--page N] [--items-per-page N]`
+- `scripts/notifications-inbox-get.sh <notification_uuid>`
+- `scripts/notifications-inbox-read.sh <notification_uuid>`
+- `scripts/notifications-inbox-unread.sh <notification_uuid>`
+- `scripts/notifications-inbox-read-all.sh`
+- `scripts/notifications-inbox-read-by-subject.sh <subject_type> <subject_uuid>`
+- `scripts/notifications-inbox-delete.sh <notification_uuid>`
+- `scripts/notifications-mutes-list.sh`
+- `scripts/notifications-mutes-add.sh <payload.json>`
+- `scripts/notifications-mutes-remove.sh <subject_type> <subject_uuid>`
+
+Directory search (same placement: `role-auth/scripts/`, not vendored):
+
+- `scripts/core-search-users.sh <query> [--limit N] [--include-bots] [--exclude-system]`
+- `scripts/core-search-groups.sh <query> [--limit N] [--exclude-system]`
+
+Install this skill by direct download or by decoding the packed bundle in `agent-skills/dist/` once that bundle has been regenerated. Do not retype the scripts.
 
 ## References
 

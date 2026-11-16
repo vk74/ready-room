@@ -7,9 +7,9 @@ File: README.md
 Last release: 0.28.3
 
 Changes in v0.28.3:
-- Registered role-service-admin, role-service-auditor, role-service-practice-manager, and role-service-coordinator in the skills table (last release 0.28.3).
-- Added Service roles composition and a route-to-skill endpoint index.
-- Added service-role smoke steps and directory layout entries.
+- Registered role-auth (directory search and notifications), role-communications, role-service-admin, role-service-auditor, role-work-service-requests, role-work-manual-activities, role-work-approvals, and role-work-acceptances (last release 0.28.3).
+- Documented Work and Service role composition and a route-to-skill endpoint index. Work, communications, directory search, and file listing each have one owning skill. Design-time catalog reads are shared by role-service-admin and role-service-auditor.
+- Added work and service smoke steps and directory layout entries.
 
 Changes in v0.27.4:
 - Sparse-checkout and raw-download examples use the public distribution repository vk74/ready-room.
@@ -129,8 +129,9 @@ This directory lives at the repository root (`agent-skills/`) so hosts can point
 
 | Skill | Last release | Description |
 |-------|--------------|-------------|
-| [role-auth](role-auth/SKILL.md) | 0.26.2 | Exchange a bot API key for a short-lived Bearer JWT (required before any other evi API call) |
+| [role-auth](role-auth/SKILL.md) | 0.28.3 | Bot API-key exchange into Bearer JWT, notifications inbox & mutes (`/api/notifications/*`, webhook wake-up handling), and directory user/group search (`/api/core/item-selector/*`) |
 | [role-attachments](role-attachments/SKILL.md) | 0.26.2 | Module-agnostic file lifecycle over `/api/fs`: upload-request, presigned PUT, confirm, list by entity, and delete |
+| [role-communications](role-communications/SKILL.md) | 0.28.3 | Entity discussion channels (`/api/communications/*`), `requester` and `internal` channels on service requests, messages, replies, mentions, reactions, pins, and read cursors |
 | [role-kb-reader](role-kb-reader/SKILL.md) | 0.27.3 | KB read/search, personal shelf (`canExport`), trees scope shelf or accessible, history, favorites, related-article lookup, `content_version`, rich content (entityLink, externalLink, mermaid) |
 | [role-kb-author](role-kb-author/SKILL.md) | 0.27.3 | Author-level KB write: nodes, articles, `content_version` on responses, inline article links, related reconcile (including after admin import), link preview |
 | [role-kb-admin](role-kb-admin/SKILL.md) | 0.26.2 | Admin-only KB governance: tree lifecycle, .kbz export/import, owner changes, KB tree ACL management, protected system-tree delete behavior |
@@ -139,15 +140,20 @@ This directory lives at the repository root (`agent-skills/`) so hosts can point
 | [role-admin-products-specialist](role-admin-products-specialist/SKILL.md) | 0.26.2 | Specialist: read-own + create/update/assign-owner-own + placement/status/bulk helpers |
 | [role-admin-products-admin](role-admin-products-admin/SKILL.md) | 0.26.2 | Admin: full adminProducts scope including placement/status/bulk, clear-all, settings |
 | [role-service-admin](role-service-admin/SKILL.md) | 0.28.3 | Service Administrator (`role.adminServices.admin`): catalog services CRUD/assign-owner, work-item forms & versions lifecycle, and `AdminApp.{Services,Forms,Practices}` settings |
-| [role-service-auditor](role-service-auditor/SKILL.md) | 0.28.3 | Service Auditor (`role.service.auditor`): read-only oversight across catalog services, work-item forms, service settings, and all Work service requests, activities, and discussion chats |
-| [role-service-practice-manager](role-service-practice-manager/SKILL.md) | 0.28.3 | Service Practice Manager (`role.service.practiceManager`): operational control across all Work service requests and manual tasks, assigned approvals/acceptances, escalation to company head, and requester discussion chat |
-| [role-service-coordinator](role-service-coordinator/SKILL.md) | 0.28.3 | Service Coordinator (`role.service.coordinator`): operational coordination across all Work service requests and manual tasks, escalation to practice managers / support tiers / company head, assigned approvals/acceptances, and requester discussion chat |
+| [role-service-auditor](role-service-auditor/SKILL.md) | 0.28.3 | Service Auditor (`role.service.auditor`): design-time read oversight across catalog services, work-item forms, and service settings (composes with `role-work-*` and `role-communications` for runtime oversight) |
+| [role-work-service-requests](role-work-service-requests/SKILL.md) | 0.28.3 | Work service requests (`/api/work/requests*`, `/api/work/services/search`, `AdminApp.Practices` read): queues, detail, work-tab updates, assignment, status, watchers, functional & hierarchical escalation, and requester cancel |
+| [role-work-manual-activities](role-work-manual-activities/SKILL.md) | 0.28.3 | Work manual tasks (`/api/work/activities/manual-tasks*`): queues, detail, status/outcome updates, time tracking, WBS/schedule, KB link, and preserve-and-add attachments |
+| [role-work-approvals](role-work-approvals/SKILL.md) | 0.28.3 | Work approvals (`/api/work/activities/approvals*`): queues, detail with `service_order` snapshot, and assignee/group approval or rejection decisions |
+| [role-work-acceptances](role-work-acceptances/SKILL.md) | 0.28.3 | Work acceptances (`/api/work/activities/acceptances*`): queues, detail, assignee/group acceptance or rejection decisions, and preserve-and-add attachments |
 
 Each skill's `SKILL.md` frontmatter includes `last_release` — the evi app
 release when that skill was last updated. Bump it whenever the skill changes
-ship with an evi release. The four service skills are marked `0.28.3`.
-`role-kb-reader` and `role-kb-author` are marked `0.27.3`. The other skills
-in this index are marked `0.26.2`.
+ship with an evi release. `role-auth`, `role-communications`,
+`role-service-admin`, `role-service-auditor`, `role-work-service-requests`,
+`role-work-manual-activities`, `role-work-approvals`, and
+`role-work-acceptances` are marked `0.28.3`. `role-kb-reader` and
+`role-kb-author` are marked `0.27.3`. The other skills in this index are
+marked `0.26.2`.
 
 More skills will be added here as separate directories.
 
@@ -214,65 +220,75 @@ Route-to-skill coverage matrix:
 | `GET /api/core/settings` | yes (`adminProducts.*` read) | no | no | yes |
 | `POST /api/admin/settings/update` (`AdminProducts` section) | no | no | no | yes |
 
-### Service roles composition
+### Work and Service role composition
 
-Each service role is a standalone skill. These skills do not stack.
+Install the skills a persona needs. Work, communications, directory search, and file routes each have one owning skill. Design-time catalog reads are the exception: `role-service-admin` is a standalone administrator skill, and `role-service-auditor` is the read-only design-time skill, so both ship the same service and form GET scripts.
 
-- **Service auditor** (`role.service.auditor`): `role-service-auditor`
-- **Service practice manager** (`role.service.practiceManager`): `role-service-practice-manager`
-- **Service coordinator** (`role.service.coordinator`): `role-service-coordinator`
-- **Service administrator** (`role.adminServices.admin`): `role-service-admin`
+- **Base bot capabilities**: `role-auth` (+ `role-communications` for chat, + `role-attachments` for files)
+- **Requester / Beneficiary bot**: `role-auth` + `role-work-service-requests` + `role-communications` (+ `role-attachments` + `role-work-acceptances` when accepting delivered requests)
+- **Support Engineer / Tier member / Service Owner / Dispatcher bot**: `role-auth` + `role-work-service-requests` + `role-work-manual-activities` + `role-communications` + `role-attachments`
+- **Approver bot**: `role-auth` + `role-work-approvals`
+- **Service Coordinator (`role.service.coordinator`) & Service Practice Manager (`role.service.practiceManager`)**: `role-auth` + `role-work-service-requests` + `role-work-manual-activities` + `role-work-approvals` + `role-work-acceptances` + `role-communications` + `role-attachments`
+- **Service Auditor (`role.service.auditor`)**: `role-auth` + `role-service-auditor` + the read scripts of `role-work-service-requests`, `role-work-manual-activities`, `role-work-approvals`, and `role-work-acceptances`, plus `role-communications` (`chat-channel-get.sh` on channel `requester`) and `role-attachments` (`fs-files-list.sh`). `service:requests:read:all` grants full read-only visibility across all rows. Do not run the write scripts of those skills.
+- **Service Administrator (`role.adminServices.admin`)**: `role-auth` + `role-service-admin`. Directory search is `role-auth/scripts/core-search-users.sh` and `role-auth/scripts/core-search-groups.sh`.
 
-File listing on a service request, a manual task, or an acceptance stays in `role-attachments`. Practice manager and coordinator wrap the same Work and discussion routes. The practice manager is the escalation head. The coordinator runs the queue.
+Approval and acceptance updates stay in `role-work-approvals` and `role-work-acceptances` and succeed only when `can_manage` is true (the caller, or one of the caller's groups, is the assignee). `service:requests:update:all` does not set that flag. It does set `can_manage` on every service request and every manual task. Coordinator and practice manager hold that permission. The auditor does not.
 
-### Service roles endpoint index
+### Work and Service endpoint index
 
-Route-to-skill coverage matrix. Approval and acceptance updates are allowed only when `can_manage` is true (the caller, or one of the caller's groups, is the assignee). `service:requests:update:all` does not set that flag. It does set `can_manage` on every manual task.
+One row per route. The skill column is the directory that wraps it.
 
-| Endpoint | Auditor | Practice Manager | Coordinator | Admin |
-|---|---|---|---|---|
-| `GET /api/admin/app/services/fetchallservices` | yes | no | no | yes |
-| `GET /api/admin/app/services/fetchsingleservice` | yes | no | no | yes |
-| `GET /api/admin/app/services/services/search` | yes | no | no | yes |
-| `GET /api/admin/app/services/forms/search` | yes | no | no | yes |
-| `GET /api/admin/app/services/catalog-section-options` | yes | no | no | yes |
-| `POST /api/admin/app/services/create` | no | no | no | yes |
-| `POST /api/admin/app/services/update` | no | no | no | yes |
-| `POST /api/admin/app/services/deleteservices` | no | no | no | yes |
-| `POST /api/admin/app/services/assign-owner` | no | no | no | yes |
-| `GET /api/admin/app/forms/fetch-all` | yes | no | no | yes |
-| `GET /api/admin/app/forms/:id` | yes | no | no | yes |
-| `GET /api/admin/app/forms/regions` | yes | no | no | yes |
-| `POST /api/admin/app/forms/create` | no | no | no | yes |
-| `PUT /api/admin/app/forms/:id` | no | no | no | yes |
-| `PUT /api/admin/app/forms/:id/catalog` | no | no | no | yes |
-| `DELETE /api/admin/app/forms/:id` | no | no | no | yes |
-| `POST /api/admin/app/forms/:id/draft` | no | no | no | yes |
-| `PUT /api/admin/app/forms/versions/:id` | no | no | no | yes |
-| `POST /api/admin/app/forms/versions/:id/publish` | no | no | no | yes |
-| `DELETE /api/admin/app/forms/versions/:id` | no | no | no | yes |
-| `GET /api/core/settings` | yes (`AdminApp.Services`, `AdminApp.Forms`, `AdminApp.Practices`) | yes (`AdminApp.Practices`) | yes (`AdminApp.Practices`) | yes |
-| `POST /api/admin/settings/update` | no | no | no | yes (`AdminApp.Services`, `AdminApp.Forms`, `AdminApp.Practices`) |
-| `GET /api/work/requests` | yes | yes | yes | no |
-| `GET /api/work/requests/:id` | yes | yes | yes | no |
-| `PATCH /api/work/requests/:id/work` | no | yes | yes | no |
-| `GET /api/work/services/search` | yes | yes | yes | no |
-| `GET /api/work/activities/manual-tasks` | yes | yes | yes | no |
-| `GET /api/work/activities/manual-tasks/:id` | yes | yes | yes | no |
-| `PATCH /api/work/activities/manual-tasks/:id` | no | yes | yes | no |
-| `GET /api/work/activities/approvals` | yes | yes | yes | no |
-| `GET /api/work/activities/approvals/:id` | yes | yes | yes | no |
-| `PATCH /api/work/activities/approvals/:id` | no | yes (assigned) | yes (assigned) | no |
-| `GET /api/work/activities/acceptances` | yes | yes | yes | no |
-| `GET /api/work/activities/acceptances/:id` | yes | yes | yes | no |
-| `PATCH /api/work/activities/acceptances/:id` | no | yes (assigned) | yes (assigned) | no |
-| `GET /api/communications/entity/service_request/:id/channels/requester` | yes | yes | yes | no |
-| `POST /api/communications/entity/service_request/:id/channels/requester/messages` | no | yes | yes | no |
-| `PATCH /api/communications/messages/:id` | no | yes | yes | no |
-| `DELETE /api/communications/messages/:id` | no | yes | yes | no |
-| `POST /api/communications/conversations/:id/read` | no | yes | yes | no |
-| `GET /api/core/item-selector/search-users` | no | yes | yes | yes |
-| `GET /api/core/item-selector/search-groups` | no | yes | yes | yes |
+| Endpoint | Skill |
+|---|---|
+| `GET /api/admin/app/services/fetchallservices` | `role-service-auditor`, `role-service-admin` |
+| `GET /api/admin/app/services/fetchsingleservice` | `role-service-auditor`, `role-service-admin` |
+| `GET /api/admin/app/services/services/search` | `role-service-auditor`, `role-service-admin` |
+| `GET /api/admin/app/services/forms/search` | `role-service-auditor`, `role-service-admin` |
+| `GET /api/admin/app/services/catalog-section-options` | `role-service-auditor`, `role-service-admin` |
+| `POST /api/admin/app/services/create` | `role-service-admin` |
+| `POST /api/admin/app/services/update` | `role-service-admin` |
+| `POST /api/admin/app/services/deleteservices` | `role-service-admin` |
+| `POST /api/admin/app/services/assign-owner` | `role-service-admin` |
+| `GET /api/admin/app/forms/fetch-all` | `role-service-auditor`, `role-service-admin` |
+| `GET /api/admin/app/forms/:id` | `role-service-auditor`, `role-service-admin` |
+| `GET /api/admin/app/forms/regions` | `role-service-auditor`, `role-service-admin` |
+| `POST /api/admin/app/forms/create` | `role-service-admin` |
+| `PUT /api/admin/app/forms/:id` | `role-service-admin` |
+| `PUT /api/admin/app/forms/:id/catalog` | `role-service-admin` |
+| `DELETE /api/admin/app/forms/:id` | `role-service-admin` |
+| `POST /api/admin/app/forms/:id/draft` | `role-service-admin` |
+| `PUT /api/admin/app/forms/versions/:id` | `role-service-admin` |
+| `POST /api/admin/app/forms/versions/:id/publish` | `role-service-admin` |
+| `DELETE /api/admin/app/forms/versions/:id` | `role-service-admin` |
+| `GET /api/core/settings` | `role-service-auditor` and `role-service-admin` (`AdminApp.Services`, `AdminApp.Forms`, `AdminApp.Practices`); `role-work-service-requests` reads `AdminApp.Practices` |
+| `POST /api/admin/settings/update` | `role-service-admin` (`AdminApp.Services`, `AdminApp.Forms`, `AdminApp.Practices`) |
+| `GET /api/work/requests` | `role-work-service-requests` |
+| `GET /api/work/requests/:id` | `role-work-service-requests` |
+| `PATCH /api/work/requests/:id/work` | `role-work-service-requests` |
+| `POST /api/work/requests/:id/cancel` | `role-work-service-requests` |
+| `GET /api/work/services/search` | `role-work-service-requests` |
+| `GET /api/work/activities/manual-tasks` | `role-work-manual-activities` |
+| `GET /api/work/activities/manual-tasks/:id` | `role-work-manual-activities` |
+| `PATCH /api/work/activities/manual-tasks/:id` | `role-work-manual-activities` |
+| `GET /api/work/activities/approvals` | `role-work-approvals` |
+| `GET /api/work/activities/approvals/:id` | `role-work-approvals` |
+| `PATCH /api/work/activities/approvals/:id` | `role-work-approvals` |
+| `GET /api/work/activities/acceptances` | `role-work-acceptances` |
+| `GET /api/work/activities/acceptances/:id` | `role-work-acceptances` |
+| `PATCH /api/work/activities/acceptances/:id` | `role-work-acceptances` |
+| `GET /api/communications/entity/:entityType/:entityId/channels/:channelKey` | `role-communications` |
+| `POST /api/communications/entity/:entityType/:entityId/channels/:channelKey/messages` | `role-communications` |
+| `PATCH /api/communications/messages/:messageId` | `role-communications` |
+| `DELETE /api/communications/messages/:messageId` | `role-communications` |
+| `POST /api/communications/messages/:messageId/reactions` | `role-communications` |
+| `POST /api/communications/messages/:messageId/pin` | `role-communications` |
+| `DELETE /api/communications/messages/:messageId/pin` | `role-communications` |
+| `POST /api/communications/conversations/:conversationId/read` | `role-communications` |
+| `GET /api/fs` | `role-attachments` |
+| `GET /api/core/item-selector/search-users` | `role-auth` |
+| `GET /api/core/item-selector/search-groups` | `role-auth` |
+
+Preserve-and-add on a manual task or an acceptance lists files through `role-attachments`, then PATCHes the activity in its own skill. Message files use `entity_type` `comm_message` on the same attachments skill.
 
 ## Connect skills to your host
 
@@ -417,11 +433,14 @@ Real environment variables always take precedence over `role.env` values.
 29. Verify service admin forms with `role-service-admin/scripts/admin-forms-list.sh`.
 30. Verify service admin settings with `role-service-admin/scripts/admin-services-settings-get.sh`.
 31. Verify service auditor catalog read with `role-service-auditor/scripts/admin-services-list.sh`.
-32. Verify service auditor request read with `role-service-auditor/scripts/work-requests-list.sh`.
-33. Verify service practice manager skill with `role-service-practice-manager/scripts/work-requests-list.sh`.
-34. Verify service coordinator skill with `role-service-coordinator/scripts/work-requests-list.sh`.
-35. After skill changes: run `bash agent-skills/tools/sync-lib.sh --check` and verify `dist/*.sha256` manifests match regenerated bundles. Do not reconstruct scripts; install from download or `dist/`.
-36. Optional: force an expired token and verify auto re-auth on next request.
+32. Verify work service requests with `role-work-service-requests/scripts/work-requests-list.sh`.
+33. Verify work manual tasks with `role-work-manual-activities/scripts/work-manual-tasks-list.sh`.
+34. Verify work approvals with `role-work-approvals/scripts/work-approvals-list.sh`.
+35. Verify work acceptances with `role-work-acceptances/scripts/work-acceptances-list.sh`.
+36. Verify communications with `role-communications/scripts/chat-channel-get.sh service_request <request_uuid> requester`.
+37. Verify directory search with `role-auth/scripts/core-search-users.sh <query>`.
+38. After skill changes: run `bash agent-skills/tools/sync-lib.sh --check` and verify `dist/*.sha256` manifests match regenerated bundles. Do not reconstruct scripts; install from download or `dist/`.
+39. Optional: force an expired token and verify auto re-auth on next request.
 
 ## Directory layout
 
@@ -444,6 +463,11 @@ agent-skills/
 │   ├── SKILL.md
 │   ├── scripts/
 │   │   └── _lib/          # vendored auth helpers
+│   └── references/
+├── role-communications/
+│   ├── SKILL.md
+│   ├── scripts/
+│   │   └── _lib/
 │   └── references/
 ├── role-kb-reader/
 │   ├── SKILL.md
@@ -490,12 +514,22 @@ agent-skills/
 │   ├── scripts/
 │   │   └── _lib/
 │   └── references/
-├── role-service-practice-manager/
+├── role-work-service-requests/
 │   ├── SKILL.md
 │   ├── scripts/
 │   │   └── _lib/
 │   └── references/
-└── role-service-coordinator/
+├── role-work-manual-activities/
+│   ├── SKILL.md
+│   ├── scripts/
+│   │   └── _lib/
+│   └── references/
+├── role-work-approvals/
+│   ├── SKILL.md
+│   ├── scripts/
+│   │   └── _lib/
+│   └── references/
+└── role-work-acceptances/
     ├── SKILL.md
     ├── scripts/
     │   └── _lib/
