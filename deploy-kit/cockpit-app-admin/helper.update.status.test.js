@@ -1,6 +1,10 @@
-/* Version: 0.26.3
+/* Version: 0.28.5
  * Purpose: Table tests for update panel action flags.
  * File: helper.update.status.test.js
+ *
+ * Changes in v0.28.5:
+ * - Blockers disable install and keep re-check and delete enabled.
+ * - Warnings keep install enabled, require acknowledgement, and keep re-check enabled.
  *
  * Changes in v0.26.3:
  * - installLabel is Start update, with the staged version when a kit is downloaded.
@@ -177,4 +181,32 @@ test('check stays enabled unless busy and its label follows whether a releases l
   var busyWithoutList = actions({ hasList: false, busy: true });
   assert.equal(busyWithoutList.checkEnabled, false);
   assert.equal(busyWithoutList.checkLabel, 'Check updates');
+});
+
+test('precheck blockers disable install and keep recheck and delete enabled', function () {
+  var result = actions({
+    stagedVersion: '0.24.4',
+    latestVersion: '0.24.4',
+    stagedCompatible: true,
+    busy: false,
+    precheckStatus: 'blockers'
+  });
+
+  assert.equal(result.installEnabled, false);
+  assert.equal(result.recheckEnabled, true);
+  assert.equal(result.deleteEnabled, true);
+});
+
+test('precheck warnings keep install enabled and require acknowledgement', function () {
+  var result = actions({
+    stagedVersion: '0.24.4',
+    latestVersion: '0.24.4',
+    stagedCompatible: true,
+    busy: false,
+    precheckStatus: 'warnings'
+  });
+
+  assert.equal(result.installEnabled, true);
+  assert.equal(result.requiresWarningAck, true);
+  assert.equal(result.recheckEnabled, true);
 });

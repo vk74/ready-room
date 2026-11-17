@@ -1,5 +1,5 @@
 #
-# Version: 0.26.3
+# Version: 0.28.5
 # Purpose: Single source of truth for the files that MUST be present in the
 #   update-kit for it to function. Consumed by the release gate
 #   (validate_prerequisites in release.sh) and by kit-archive validation
@@ -8,6 +8,10 @@
 #   Adding a load-bearing file to this kit means adding it here in the same
 #   commit.
 # File: MANIFEST
+#
+# Changes in v0.28.5:
+# - Added update-kit/scripts/lib/schema-baseline.sh (catalog baseline dump and compare).
+# - Added update-kit/scripts/verify-instance.sh (pre-update instance precheck and JSON report).
 #
 # Changes in v0.26.3:
 # - Lists the check, download, and install orchestrators and their phase scripts.
@@ -34,8 +38,10 @@ update-kit/scripts/update-2-host-and-cockpit.sh
 update-kit/scripts/update-3-migrate-db.sh
 update-kit/scripts/update-4-files-and-config.sh
 update-kit/scripts/update-5-start-and-verify.sh
+update-kit/scripts/verify-instance.sh
 update-kit/scripts/run-migrations.sh
 update-kit/scripts/lib/version.sh
 update-kit/scripts/lib/github-auth.sh
 update-kit/scripts/lib/update-common.sh
+update-kit/scripts/lib/schema-baseline.sh
 update-kit/migrations/_prelude/00_migration_helpers.sql

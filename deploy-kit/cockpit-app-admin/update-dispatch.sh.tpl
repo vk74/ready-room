@@ -1,14 +1,31 @@
 #!/usr/bin/env bash
-# Version: 0.28.3
+# Version: 0.28.5
 # Purpose: Dispatcher for application update Cockpit package.
 # Routes commands from the Cockpit UI to the appropriate update scripts.
 # read-status reports the staged kit version and, when config/app.env exists,
-# fills empty deployedAt and lastUpdatedAt from app.instance.
-# start-update refuses a version mismatch and may store a sudo password from stdin.
-# discard-download removes only that staged kit directory.
+# fills empty deployedAt and lastUpdatedAt from app.instance. A valid
+# precheck-report.json is added to that response and is not stored in updates.json.
+# start-update refuses a version mismatch, blockers, and unacknowledged warnings,
+# and may store a sudo password from stdin.
+# discard-download removes only that staged kit directory, plus the precheck report
+# and the warnings acknowledgement flag.
+# verify-instance runs verify-instance.sh and treats exits 0, 1, and 2 as a
+# completed check.
 # The {{DEPLOYMENT_DIR}} placeholder is replaced during install.sh with the
 # actual deployment directory path.
 # Cockpit package. File: update-dispatch.sh
+#
+# Changes in v0.28.5:
+# - read-status adds precheck from precheck-report.json to the response when a
+#   staged kit is present and the report is an object with a string status.
+#   stagedVersion and precheck are never written into updates.json.
+# - A downloaded kit whose version cannot be read also removes precheck-report.json
+#   and ack-warnings.flag.
+# - discard-download and cleanup-update remove those two files.
+# - verify-instance resolves verify-instance.sh from the staged kit, then from
+#   the installed update scripts, and exits 0 when the checker exits 0, 1, or 2.
+# - start-update refuses precheck status blockers, and refuses warnings unless
+#   the second argument is --ack-warnings. That argument writes ack-warnings.flag.
 #
 # Changes in v0.28.3:
 # - Removed `github-token-status` and `set-github-token` dispatch commands.
@@ -125,6 +142,8 @@ OUTPUT_LOG="${UPDATES_DIR}/update-output.log"
 RESULT_JSON="${UPDATES_DIR}/update-result.json"
 
 SUDO_PASS_FILE="${UPDATES_DIR}/sudo.pass"
+PRECHECK_REPORT_JSON="${UPDATES_DIR}/precheck-report.json"
+ACK_WARNINGS_FILE="${UPDATES_DIR}/ack-warnings.flag"
 
 CMD="${1:-}"
 shift || true
@@ -265,9 +284,14 @@ cmd_read_status() {
     if [[ -z "$staged" ]]; then
       rewrite_updates_json '.downloaded = false | .downloadPath = ""'
       staged=""
+      rm -f "$PRECHECK_REPORT_JSON" "$ACK_WARNINGS_FILE"
     fi
   fi
-  /usr/bin/jq -c --arg stagedVersion "$staged" '. + {stagedVersion: $stagedVersion}' "$UPDATES_JSON"
+  if [[ -n "$staged" && -f "$PRECHECK_REPORT_JSON" ]] && /usr/bin/jq -e 'type == "object" and (.status | type) == "string"' "$PRECHECK_REPORT_JSON" >/dev/null 2>&1; then
+    /usr/bin/jq -c --arg stagedVersion "$staged" --slurpfile precheck "$PRECHECK_REPORT_JSON" '. + {stagedVersion: $stagedVersion, precheck: $precheck[0]}' "$UPDATES_JSON"
+  else
+    /usr/bin/jq -c --arg stagedVersion "$staged" '. + {stagedVersion: $stagedVersion}' "$UPDATES_JSON"
+  fi
 }
 
 # Refuse start-update unless the argument matches the staged kit version.
@@ -321,6 +345,7 @@ cmd_discard_download() {
     rm -rf "$staged_real"
   fi
   rewrite_updates_json '.downloaded = false | .downloadPath = "" | .minVersion = "" | .compatible = true' || fail_json "updates.json could not be updated"
+  rm -f "$PRECHECK_REPORT_JSON" "$ACK_WARNINGS_FILE"
   echo '{"status":"ok"}'
 }
 
@@ -354,6 +379,24 @@ resolve_apply_script() {
     return 0
   fi
   echo "ERROR: update-install-orchestrator.sh not found in downloaded kit at ${orchestrator}" >&2
+  return 1
+}
+
+# Prefer the staged kit's verifier. Fall back to the installed update scripts.
+resolve_verify_script() {
+  local download_path=""
+  if [[ -f "$UPDATES_JSON" ]]; then
+    download_path=$(/usr/bin/jq -r 'if (.downloadPath | type) == "string" then .downloadPath else "" end' "$UPDATES_JSON") || return 1
+  fi
+  if [[ -n "$download_path" && -f "${download_path}/update/scripts/verify-instance.sh" ]]; then
+    printf '%s\n' "${download_path}/update/scripts/verify-instance.sh"
+    return 0
+  fi
+  if [[ -f "${UPDATE_SCRIPTS_DIR}/verify-instance.sh" ]]; then
+    printf '%s\n' "${UPDATE_SCRIPTS_DIR}/verify-instance.sh"
+    return 0
+  fi
+  echo "ERROR: verify-instance.sh not found in the staged kit or the installed update scripts." >&2
   return 1
 }
 
@@ -402,6 +445,22 @@ case "$CMD" in
 
     refuse_start_version "${1:-}"
 
+    ACK_ARG="${2:-}"
+    if [[ -f "$PRECHECK_REPORT_JSON" ]]; then
+      precheck_status=$(/usr/bin/jq -r 'if (.status | type) == "string" then .status else "" end' "$PRECHECK_REPORT_JSON" 2>/dev/null || echo "")
+      if [[ "$precheck_status" == "blockers" ]]; then
+        fail_json "pre-update check found blocking issues; resolve them before updating"
+      fi
+      if [[ "$precheck_status" == "warnings" && "$ACK_ARG" != "--ack-warnings" ]]; then
+        fail_json "pre-update warnings must be acknowledged before starting the update"
+      fi
+    fi
+    if [[ "$ACK_ARG" == "--ack-warnings" ]]; then
+      printf '%s\n' "${1}" > "$ACK_WARNINGS_FILE"
+    else
+      rm -f "$ACK_WARNINGS_FILE"
+    fi
+
     APPLY_SCRIPT=$(resolve_apply_script) || exit 1
     chmod +x "$APPLY_SCRIPT"
 
@@ -426,6 +485,25 @@ case "$CMD" in
     CHILD_PID=$!
     echo "$CHILD_PID" > "$PID_FILE"
     echo "{\"status\":\"started\",\"pid\":$CHILD_PID}"
+    ;;
+  verify-instance)
+    OWNER_UID=$(stat -c '%u' "$DEPLOYMENT_DIR" 2>/dev/null || stat -f '%u' "$DEPLOYMENT_DIR" 2>/dev/null)
+    if [[ -n "$OWNER_UID" ]] && [[ -d "/run/user/${OWNER_UID}" ]]; then
+      export XDG_RUNTIME_DIR="/run/user/${OWNER_UID}"
+    fi
+    VERIFY_SCRIPT=$(resolve_verify_script) || exit 1
+    chmod +x "$VERIFY_SCRIPT"
+    download_path=""
+    if [[ -f "$UPDATES_JSON" ]]; then
+      download_path=$(/usr/bin/jq -r 'if (.downloadPath | type) == "string" then .downloadPath else "" end' "$UPDATES_JSON") || exit 1
+    fi
+    rm -f "$ACK_WARNINGS_FILE"
+    v_rc=0
+    "$VERIFY_SCRIPT" "$DEPLOYMENT_DIR" ${download_path:+--staged-dir "$download_path"} --report-file "$PRECHECK_REPORT_JSON" || v_rc=$?
+    if [[ "$v_rc" -gt 2 ]]; then
+      exit "$v_rc"
+    fi
+    exit 0
     ;;
   update-progress)
     OFFSET="${1:-0}"
@@ -488,7 +566,7 @@ case "$CMD" in
     fi
     ;;
   cleanup-update)
-    rm -f "$PID_FILE" "$LOCK_FILE" "$RESULT_JSON" "$OUTPUT_LOG" "$SUDO_PASS_FILE"
+    rm -f "$PID_FILE" "$LOCK_FILE" "$RESULT_JSON" "$OUTPUT_LOG" "$SUDO_PASS_FILE" "$PRECHECK_REPORT_JSON" "$ACK_WARNINGS_FILE"
     rm -f "${UPDATES_DIR}/cockpit-install.pid" "${UPDATES_DIR}/cockpit-install-result.json" "${UPDATES_DIR}/cockpit-install-output.log"
     rm -f "${UPDATES_DIR}/install-cockpit-panels.run.sh"
     echo '{"status":"cleaned"}'
@@ -502,7 +580,7 @@ case "$CMD" in
     ;;
   *)
     echo "ERROR: Unknown command: ${CMD}" >&2
-    echo "Available commands: list-releases, download-update, discard-download, read-status, start-update, update-progress, cleanup-update, set-include-beta, get-defaults, verify-sudo" >&2
+    echo "Available commands: list-releases, download-update, discard-download, read-status, start-update, verify-instance, update-progress, cleanup-update, set-include-beta, get-defaults, verify-sudo" >&2
     exit 1
     ;;
 esac

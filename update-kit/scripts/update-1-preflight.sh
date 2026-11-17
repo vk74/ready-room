@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 #
-# Version: 0.26.3
-# Purpose: Phase 1/5 of an application update: validate paths, minVersion, sudo.pass, and local container images. Takes APP_HOME as $1.
+# Version: 0.28.5
+# Purpose: Phase 1/5 of an application update: validate paths, minVersion, instance state, sudo.pass, and local container images. Takes APP_HOME as $1.
 # File: update-1-preflight.sh
+#
+# Changes in v0.28.5:
+# - verify_instance_state runs after the minVersion check and before image pulls.
+# - A blocking precheck, or warnings that were not acknowledged, aborts before
+#   services stop and removes sudo.pass.
+# - An ack-warnings flag whose contents are this version directory name, or the
+#   literal true, is consumed and passed through as --allow-warnings.
 #
 # Changes in v0.26.3:
 # - Pre-flight phase. sudo.pass is validated and left on disk for phase 2.
@@ -83,6 +90,47 @@ check_compatibility() {
     exit 1
   fi
   log_tee " ${SYM_OK} compatible (current ${current_version}, min required ${min_version})"
+}
+
+# --- Step 2b: Verify instance against reference baseline and dry-run config/render ---
+verify_instance_state() {
+  local verifier="${SCRIPT_DIR}/verify-instance.sh"
+  if [[ ! -f "$verifier" ]]; then
+    log_tee " ${SYM_WARN} verify-instance.sh not found at ${verifier}; skipping instance precheck"
+    return 0
+  fi
+  chmod +x "$verifier" 2>/dev/null || true
+
+  local ack_file="${UPDATES_DIR}/ack-warnings.flag"
+  local -a verify_args=("$APP_HOME" --staged-dir "$UPDATE_VERSION_DIR" --report-file "${UPDATES_DIR}/precheck-report.json")
+  if [[ -f "$ack_file" ]]; then
+    local ack_ver=""
+    ack_ver=$(cat "$ack_file" 2>/dev/null | tr -d '[:space:]' || true)
+    rm -f "$ack_file" 2>/dev/null || true
+    if [[ "$ack_ver" == "$VERSION_DIR_NAME" || "$ack_ver" == "true" ]]; then
+      log_tee " ${SYM_WARN} pre-update warnings acknowledged by administrator; proceeding with --allow-warnings"
+      verify_args+=(--allow-warnings)
+    fi
+  fi
+
+  log_tee "verifying instance state and configuration..."
+  local verify_out="" verify_rc=0
+  verify_out=$("$verifier" "${verify_args[@]}" 2>&1) || verify_rc=$?
+  if [[ -n "$verify_out" ]]; then
+    printf '%s\n' "$verify_out" | while IFS= read -r line; do
+      log_tee "   [precheck] $line"
+    done
+  fi
+  if [[ $verify_rc -eq 1 ]]; then
+    log_tee " ${SYM_FAIL} pre-update check failed with blocking issues; aborting before service stop"
+    rm -f "${UPDATES_DIR}/sudo.pass" 2>/dev/null || true
+    exit 1
+  elif [[ $verify_rc -ne 0 ]]; then
+    log_tee " ${SYM_FAIL} pre-update check reported unacknowledged warnings (exit ${verify_rc}); aborting before service stop"
+    rm -f "${UPDATES_DIR}/sudo.pass" 2>/dev/null || true
+    exit 1
+  fi
+  log_tee " ${SYM_OK} instance state and configuration verified"
 }
 
 # Read sudo.pass written by the Cockpit UI. An older panel can create the file
@@ -181,6 +229,7 @@ set +e
 
 validate_inputs
 check_compatibility
+verify_instance_state
 validate_sudo_password
 ensure_images_present
 exit 0

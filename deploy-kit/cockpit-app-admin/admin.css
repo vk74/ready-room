@@ -1,8 +1,12 @@
-/* Version: 0.28.3
+/* Version: 0.28.5
  * Purpose: Styles for the admin tools Cockpit package.
  * Two-panel layout: left navigation sidebar + right content area.
  * Includes dark theme support via .theme-dark class on <html>, synced from Cockpit shell.
  * Cockpit package; filename: admin.css
+ *
+ * Changes in v0.28.5:
+ * - Pre-update instance check report styles, including blocker and warning rows, for light and dark themes.
+ * - Sudo modal warning-acknowledgement checkbox styles for light and dark themes.
  *
  * Changes in v0.28.3:
  * - Removed `.update-github-*` styles and unused `.update-sudo-what` / `.update-sudo-note` rules.
@@ -1700,6 +1704,129 @@ html.theme-dark .update-sudo-input {
   background: var(--pf-v5-global--BackgroundColor--200, #1b1d21);
   border-color: var(--pf-v5-global--BorderColor--300, #57585a);
   color: var(--pf-v5-global--Color--100, #e0e0e0);
+}
+
+/* ── Pre-update instance check ── */
+
+.update-precheck-wrapper {
+  margin: 0 0 24px 0;
+  padding: 16px;
+  border: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
+  border-radius: 4px;
+  background: var(--pf-v5-global--BackgroundColor--100, #ffffff);
+}
+
+.update-precheck-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.update-precheck-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.update-precheck-title-group h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--pf-v5-global--Color--100, #151515);
+}
+
+.update-precheck-summary {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--pf-v5-global--Color--100, #151515);
+}
+
+.update-precheck-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.update-precheck-item {
+  padding: 8px 12px;
+  border-radius: 3px;
+  border-left: 4px solid var(--pf-v5-global--BorderColor--300, #8a8d90);
+  background: var(--pf-v5-global--BackgroundColor--200, #f0f0f0);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--pf-v5-global--Color--100, #151515);
+}
+
+.update-precheck-item-blocker {
+  border-left-color: #c9190b;
+  background: #fce8e8;
+  color: #7d1007;
+}
+
+.update-precheck-item-warning {
+  border-left-color: #f0ab00;
+  background: #fdf7e7;
+  color: #795600;
+}
+
+html.theme-dark .update-precheck-wrapper {
+  background: var(--pf-v5-global--BackgroundColor--100, #212427);
+  border-color: var(--pf-v5-global--BorderColor--100, #3c3f42);
+}
+
+html.theme-dark .update-precheck-title-group h3,
+html.theme-dark .update-precheck-summary {
+  color: var(--pf-v5-global--Color--100, #e0e0e0);
+}
+
+html.theme-dark .update-precheck-item {
+  background: var(--pf-v5-global--BackgroundColor--200, #1b1d21);
+  color: var(--pf-v5-global--Color--100, #e0e0e0);
+}
+
+html.theme-dark .update-precheck-item-blocker {
+  background: #3b1010;
+  border-left-color: #c9190b;
+  color: #f5b5b5;
+}
+
+html.theme-dark .update-precheck-item-warning {
+  background: #3d3000;
+  border-left-color: #f0ab00;
+  color: #f5d680;
+}
+
+.update-sudo-warnings-ack {
+  margin: 0 0 16px 0;
+  padding: 12px 16px;
+  background: #fdf7e7;
+  border-left: 4px solid #f0ab00;
+  border-radius: 3px;
+}
+
+.update-sudo-ack-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  font-weight: 600;
+  color: #795600;
+  cursor: pointer;
+}
+
+html.theme-dark .update-sudo-warnings-ack {
+  background: #3d3000;
+  border-left-color: #f0ab00;
+}
+
+html.theme-dark .update-sudo-ack-label {
+  color: #f5d680;
 }
 
 /* ── Updates section responsive ── */

@@ -1,11 +1,22 @@
 #!/usr/bin/env bash
 #
-# Version: 0.26.3
+# Version: 0.28.5
 # Purpose: Download one application release and the container images it needs.
 #          Phase 1 fetches or reuses the release kit. Phase 2 pulls images.
 #          updates.json is marked downloaded only after both phases succeed.
+#          Phase 3 runs verify-instance.sh when a verifier is present. Its
+#          result is recorded for the panel and does not fail the download.
 #          Usage: update-download-orchestrator.sh <APP_HOME> [--version <ver>]
 # File: update-download-orchestrator.sh
+#
+# Changes in v0.28.5:
+# - Phases are numbered 1/3, 2/3, and 3/3.
+# - After updates.json is marked downloaded, phase 3 runs verify-instance.sh
+#   from the staged kit when that copy exists, otherwise the on-disk script.
+# - The ack-warnings flag is cleared before the precheck. A missing verifier
+#   removes any stale precheck-report.json.
+# - Precheck exit codes are reported and are not fatal for the download, so
+#   downloaded: true and the report stay on disk for the panel.
 #
 # Changes in v0.26.3:
 # - Download orchestrator. Runs download-1-release-kit.sh, then download-2-container-images.sh.
@@ -183,12 +194,12 @@ DOWNLOAD_START_SEC=$SECONDS
 DL_STATS_FILE=$(mktemp "${TMPDIR:-/tmp}/app-dl-stats-XXXXXX")
 trap 'rm -f "$DL_STATS_FILE"' EXIT
 
-phase "1/2" "downloading release kit"
+phase "1/3" "downloading release kit"
 if ! "${SCRIPT_DIR}/download-1-release-kit.sh" "$APP_HOME" "$latest_version" "$DL_STATS_FILE"; then
   exit 1
 fi
 
-phase "2/2" "pulling container images"
+phase "2/3" "pulling container images"
 if ! "${SCRIPT_DIR}/download-2-container-images.sh" "$APP_HOME" "$latest_version" "$DL_STATS_FILE"; then
   exit 1
 fi
@@ -231,6 +242,37 @@ if [[ "$installed" != "unknown" ]]; then
   if [[ -z "$cur" || "$cur" == "unknown" ]]; then
     write_json_field "currentVersion" "$installed"
   fi
+fi
+
+# Precheck is recorded for the panel. A non-zero verifier does not undo
+# downloaded: true and does not fail this command.
+phase "3/3" "verifying instance compatibility and configuration"
+rm -f "${UPDATES_DIR}/ack-warnings.flag" 2>/dev/null || true
+staged_verifier="${download_dir}/update/scripts/verify-instance.sh"
+ondisk_verifier="${SCRIPT_DIR}/verify-instance.sh"
+verifier_script=""
+if [[ -f "$staged_verifier" ]]; then
+  chmod +x "$staged_verifier" 2>/dev/null || true
+  verifier_script="$staged_verifier"
+elif [[ -f "$ondisk_verifier" ]]; then
+  chmod +x "$ondisk_verifier" 2>/dev/null || true
+  verifier_script="$ondisk_verifier"
+fi
+if [[ -n "$verifier_script" ]]; then
+  verify_rc=0
+  "$verifier_script" "$APP_HOME" \
+    --staged-dir "$download_dir" \
+    --report-file "${UPDATES_DIR}/precheck-report.json" || verify_rc=$?
+  if [[ $verify_rc -eq 0 ]]; then
+    printf " %s pre-update verification passed (instance is clean)\n" "${SYM_OK}"
+  elif [[ $verify_rc -eq 2 ]]; then
+    printf " %s pre-update verification completed with warnings (review report before starting update)\n" "${SYM_WARN}"
+  else
+    printf " %s pre-update verification found blocking issues (resolve blockers before starting update)\n" "${SYM_FAIL}"
+  fi
+else
+  rm -f "${UPDATES_DIR}/precheck-report.json" 2>/dev/null || true
+  info "verify-instance.sh not present in kit; skipping pre-update verification"
 fi
 
 kit_bytes=$(read_stat KIT_BYTES)

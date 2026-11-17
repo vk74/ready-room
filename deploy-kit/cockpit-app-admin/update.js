@@ -1,12 +1,17 @@
-/* Version: 0.28.3
+/* Version: 0.28.5
  * Purpose: Main logic for the Cockpit updates panel.
  * Handles check for updates (list releases), download of the selected release, delete of the staged kit,
- * and install of the staged kit (detached + polling).
+ * the pre-update instance check, and install of the staged kit (detached + polling).
  * Communicates with host scripts via update-dispatch.sh using cockpit.spawn().
- * Install, download, and delete flags come from updatePanelActions in helper.update.status.js.
+ * Install, download, delete, and re-check flags come from updatePanelActions in helper.update.status.js.
  * State machine: IDLE | INSTALLING | FINISHED_SUCCESS | FINISHED_FAILED.
  * On init, calls update-progress first to reconnect to an in-progress update if any.
  * Cockpit package; filename: update.js
+ *
+ * Changes in v0.28.5:
+ * - Renders the pre-update instance check and runs verify-instance from Re-check instance.
+ * - A staged kit with blockers cannot open the sudo modal. Warnings require the acknowledgement checkbox and pass --ack-warnings to start-update.
+ * - The status badge reads check failed (blockers), ready (with warnings), or ready to install.
  *
  * Changes in v0.28.3:
  * - Removed GitHub access key status and save handlers (`github-token-status`, `set-github-token`).
@@ -259,7 +264,8 @@
       selectedCompatible: selectedRelease ? selectedRelease.compatible : true,
       hasList: hasList,
       busy: state.operationRunning === true
-        || state.uiState === 'INSTALLING'
+        || state.uiState === 'INSTALLING',
+      precheckStatus: (d && d.precheck && typeof d.precheck.status === 'string') ? d.precheck.status : ''
     });
   }
 
@@ -297,6 +303,7 @@
     /* Version numbers stay live during install. Keep the installing or finished badge
        only while installing, or after finish when there is no staged kit and no releases list. */
     var actions = panelActions();
+    renderPrecheckReport(d, actions);
     var stagedVersion = (d && typeof d.stagedVersion === 'string') ? d.stagedVersion : '';
     var finishedState = state.uiState === 'FINISHED_SUCCESS' || state.uiState === 'FINISHED_FAILED';
     var inInstallFlow = state.uiState === 'INSTALLING'
@@ -311,7 +318,13 @@
         setBadge('warning', 'update available');
         setCompatibilityWarning(true);
       } else if (stagedVersion) {
-        setBadge('info', 'ready to install');
+        if (d.precheck && d.precheck.status === 'blockers') {
+          setBadge('warning', 'check failed (blockers)');
+        } else if (d.precheck && d.precheck.status === 'warnings') {
+          setBadge('info', 'ready (with warnings)');
+        } else {
+          setBadge('info', 'ready to install');
+        }
         setCompatibilityWarning(false);
       } else if (hasList) {
         setBadge('warning', state.releasesList.length + ' update(s) available');
@@ -346,6 +359,85 @@
 
     els.btnCheck.disabled = !actions.checkEnabled;
     els.btnCheck.textContent = actions.checkLabel;
+  }
+
+  function renderPrecheckReport(d, actions) {
+    if (!els.precheckWrapper) return;
+    if (!(d && d.stagedVersion && d.precheck && typeof d.precheck === 'object')) {
+      els.precheckWrapper.classList.add('hidden');
+      if (els.precheckList) {
+        els.precheckList.innerHTML = '';
+        els.precheckList.classList.add('hidden');
+      }
+      return;
+    }
+
+    els.precheckWrapper.classList.remove('hidden');
+    if (els.btnRecheck) {
+      els.btnRecheck.disabled = !(actions && actions.recheckEnabled);
+    }
+
+    var status = (typeof d.precheck.status === 'string') ? d.precheck.status : '';
+    if (els.precheckBadge) {
+      var badgeType = 'neutral';
+      var badgeText = status || 'unknown';
+      if (status === 'clean') {
+        badgeType = 'success';
+        badgeText = 'clean';
+      } else if (status === 'warnings') {
+        badgeType = 'warning';
+        badgeText = 'warnings';
+      } else if (status === 'blockers') {
+        badgeType = 'warning';
+        badgeText = 'blockers';
+      }
+      els.precheckBadge.textContent = badgeText;
+      els.precheckBadge.className = 'update-badge update-badge-' + badgeType;
+    }
+    if (els.precheckSummary) {
+      if (status === 'clean') {
+        els.precheckSummary.textContent = 'This instance matches the expected catalog and configuration.';
+      } else if (status === 'warnings') {
+        els.precheckSummary.textContent = 'Instance drift was found. Review the warnings and acknowledge them before starting the update.';
+      } else if (status === 'blockers') {
+        els.precheckSummary.textContent = 'Blocking issues must be resolved before the update can start. Fix them, then click Re-check instance.';
+      } else {
+        els.precheckSummary.textContent = '';
+      }
+    }
+
+    if (!els.precheckList) return;
+    var items = d.precheck.items;
+    if (!Array.isArray(items) || items.length === 0) {
+      els.precheckList.innerHTML = '';
+      els.precheckList.classList.add('hidden');
+      return;
+    }
+
+    var html = '';
+    var i;
+    for (i = 0; i < items.length; i++) {
+      var item = items[i] || {};
+      var severity = (typeof item.severity === 'string') ? item.severity : '';
+      var label = '[WARNING]';
+      var itemClass = 'update-precheck-item update-precheck-item-warning';
+      if (severity === 'BLOCKER') {
+        label = '[BLOCKER]';
+        itemClass = 'update-precheck-item update-precheck-item-blocker';
+      } else if (severity !== 'WARNING') {
+        label = '[' + severity + ']';
+        itemClass = 'update-precheck-item';
+      }
+      var objectText = (typeof item.object === 'string') ? item.object : '';
+      var messageText = (typeof item.message === 'string') ? item.message : '';
+      html += '<div class="' + itemClass + '">'
+        + escapeHtml(label) + ' '
+        + escapeHtml(objectText) + ' '
+        + escapeHtml(messageText)
+        + '</div>';
+    }
+    els.precheckList.innerHTML = html;
+    els.precheckList.classList.remove('hidden');
   }
 
   function setBadge(type, text) {
@@ -701,6 +793,13 @@
     });
   }
 
+  function recheckInstance() {
+    if (state.operationRunning || state.uiState === 'INSTALLING') return;
+    runOperationWithArgs(['verify-instance'], 'Verifying instance compatibility and configuration...', function () {
+      showStatus('success', 'Pre-update instance check completed.');
+    });
+  }
+
   function checkForUpdates() {
     if (state.operationRunning || state.uiState === 'INSTALLING') return;
     resetFinishedState();
@@ -842,6 +941,16 @@
     if (errEl) errEl.classList.add('hidden');
     if (input) input.value = '';
     if (versionEl) versionEl.textContent = state.confirmedInstallVersion;
+    var confirmBtn = document.getElementById('btn-sudo-confirm');
+    var needsWarningAck = !!(state.updateData && state.updateData.precheck && state.updateData.precheck.status === 'warnings');
+    if (needsWarningAck) {
+      if (els.sudoWarningsAckWrapper) els.sudoWarningsAckWrapper.classList.remove('hidden');
+      if (els.chkAckWarnings) els.chkAckWarnings.checked = false;
+      if (confirmBtn) confirmBtn.disabled = true;
+    } else {
+      if (els.sudoWarningsAckWrapper) els.sudoWarningsAckWrapper.classList.add('hidden');
+      if (confirmBtn) confirmBtn.disabled = false;
+    }
     modal.classList.remove('hidden');
     if (input) setTimeout(function () { input.focus(); }, 50);
   }
@@ -856,6 +965,15 @@
     var errEl = document.getElementById('sudo-error');
     var confirmBtn = document.getElementById('btn-sudo-confirm');
     var password = input ? input.value : '';
+
+    if (state.updateData && state.updateData.precheck && state.updateData.precheck.status === 'warnings'
+        && !(els.chkAckWarnings && els.chkAckWarnings.checked)) {
+      if (errEl) {
+        errEl.textContent = 'Please acknowledge the pre-update warnings before continuing.';
+        errEl.classList.remove('hidden');
+      }
+      return;
+    }
 
     if (!password) {
       if (errEl) { errEl.textContent = 'Password cannot be empty.'; errEl.classList.remove('hidden'); }
@@ -909,7 +1027,12 @@
 
     // One install process for the staged kit confirmed in the modal.
     // The first phase reads the sudo password from stdin, then it is dropped.
-    var proc = cockpit.spawn([DISPATCH_PATH, 'start-update', stagedVersion], {
+    var startArgs = [DISPATCH_PATH, 'start-update', stagedVersion];
+    if (state.updateData && state.updateData.precheck && state.updateData.precheck.status === 'warnings'
+        && els.chkAckWarnings && els.chkAckWarnings.checked) {
+      startArgs.push('--ack-warnings');
+    }
+    var proc = cockpit.spawn(startArgs, {
       err: 'out'
     });
     if (state.sudoPassword) {
@@ -978,6 +1101,11 @@
 
       state.updateData = status;
       refreshUI();
+
+      if (status.precheck && status.precheck.status === 'blockers') {
+        showStatus('error', 'Pre-update check found blocking issues. Resolve the blockers shown in the report and click Re-check instance.');
+        return;
+      }
 
       var stagedVersion = (typeof status.stagedVersion === 'string') ? status.stagedVersion : '';
       if (!stagedVersion) {
@@ -1129,6 +1257,13 @@
     els.chkBeta = document.getElementById('chk-beta');
     els.releasesWrapper = document.getElementById('releases-list-wrapper');
     els.releasesList = document.getElementById('releases-list');
+    els.precheckWrapper = document.getElementById('precheck-report-wrapper');
+    els.precheckBadge = document.getElementById('precheck-status-badge');
+    els.precheckSummary = document.getElementById('precheck-summary');
+    els.precheckList = document.getElementById('precheck-items-list');
+    els.btnRecheck = document.getElementById('btn-recheck');
+    els.sudoWarningsAckWrapper = document.getElementById('sudo-warnings-ack-wrapper');
+    els.chkAckWarnings = document.getElementById('chk-ack-warnings');
 
     els.btnCheck.addEventListener('click', checkForUpdates);
     els.btnDownload.addEventListener('click', downloadUpdate);
@@ -1136,6 +1271,21 @@
       els.btnDeleteDownload.addEventListener('click', deleteDownload);
     }
     els.btnInstall.addEventListener('click', installUpdate);
+    if (els.btnRecheck) {
+      els.btnRecheck.addEventListener('click', recheckInstance);
+    }
+    if (els.chkAckWarnings) {
+      els.chkAckWarnings.addEventListener('change', function () {
+        var confirmBtn = document.getElementById('btn-sudo-confirm');
+        if (!confirmBtn) return;
+        var needsAck = !!(state.updateData && state.updateData.precheck && state.updateData.precheck.status === 'warnings');
+        if (!needsAck) {
+          confirmBtn.disabled = false;
+          return;
+        }
+        confirmBtn.disabled = !els.chkAckWarnings.checked;
+      });
+    }
     document.addEventListener('updates-panel-show', function () {
       refreshSystemState();
     });

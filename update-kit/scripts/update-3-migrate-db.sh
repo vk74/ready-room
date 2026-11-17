@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 #
-# Version: 0.26.3
-# Purpose: Phase 3/5 of an application update: stop services except db, snapshot, run migrations, check schema invariants, and roll the database back on failure. Takes APP_HOME as $1.
+# Version: 0.28.5
+# Purpose: Phase 3/5 of an application update: stop services except db, snapshot, dry-run migrations, run migrations, check schema invariants, and roll the database back on failure. Takes APP_HOME as $1.
 # File: update-3-migrate-db.sh
+#
+# Changes in v0.28.5:
+# - After the pre-migration snapshot and before apply, dry_run_migrations runs
+#   run-migrations.sh --dry-run when that runner documents the flag.
+# - A dry-run failure leaves the database unchanged, starts the old services,
+#   and records rolled_back. A runner without --dry-run is skipped with a warning.
 #
 # Changes in v0.26.3:
 # - Database migration phase. A snapshot failure starts services and exits 1 without writing update-result.json.
@@ -28,6 +34,11 @@ runner_supports_migrations_dir() {
 # Same probe as runner_supports_migrations_dir, for the applied-list flag.
 runner_supports_applied_list_file() {
   grep -q -- '--applied-list-file' "$1" 2>/dev/null
+}
+
+# Same probe, for the transactional dry-run flag.
+runner_supports_dry_run() {
+  grep -q -- '--dry-run' "$1" 2>/dev/null
 }
 
 # Parse run-migrations.sh stdout for migrations that actually committed.
@@ -302,6 +313,50 @@ handle_schema_failure() {
   return 1
 }
 
+# Transactional dry-run of the staged migrations. A runner that does not
+# document --dry-run is skipped so an older kit can still apply. Failure
+# returns 1 without having committed; the caller restarts the old services.
+dry_run_migrations() {
+  log_tee "running transactional migration dry-run..."
+
+  local migrations_script=""
+  local staged_runner="${NEW_UPDATE_DIR}/scripts/run-migrations.sh"
+  local ondisk_runner="${APP_HOME}/update/scripts/run-migrations.sh"
+
+  if [[ -f "$staged_runner" && -r "$staged_runner" ]]; then
+    migrations_script="$staged_runner"
+  elif [[ -f "$ondisk_runner" ]]; then
+    migrations_script="$ondisk_runner"
+    log_tee " ${SYM_WARN} staged run-migrations.sh missing; falling back to on-disk ${ondisk_runner}"
+  else
+    log_tee " ${SYM_WARN} run-migrations.sh not found; skipping migration dry-run"
+    return 0
+  fi
+
+  if ! runner_supports_dry_run "$migrations_script"; then
+    log_tee " ${SYM_WARN} run-migrations.sh does not support --dry-run; skipping transactional dry-run"
+    return 0
+  fi
+
+  chmod +x "$migrations_script"
+  local dry_out="" dry_rc=0
+  log_tee "   runner: ${migrations_script} --migrations-dir ${NEW_UPDATE_DIR}/migrations --dry-run"
+  dry_out=$("$migrations_script" "$APP_HOME" --migrations-dir "${NEW_UPDATE_DIR}/migrations" --dry-run 2>&1) || dry_rc=$?
+  if [[ -n "$dry_out" ]]; then
+    printf '%s\n' "$dry_out" | while IFS= read -r line; do
+      log_tee "   [dry-run] $line"
+    done
+  fi
+  if [[ $dry_rc -ne 0 ]]; then
+    APPLIED_MIG_STATE="known"
+    APPLIED_MIG_LIST=""
+    log_tee " ${SYM_FAIL} migration transactional dry-run failed"
+    return 1
+  fi
+  log_tee " ${SYM_OK} transactional migration dry-run passed"
+  return 0
+}
+
 # --- Run database migrations from STAGING (on-disk kit is still the old one) ---
 # When the runner supports --applied-list-file, committed basenames are read
 # from that file. Stdout parsing is only the fallback for an older runner.
@@ -477,6 +532,15 @@ stop_services
 if ! ensure_db_running || ! pre_migration_snapshot; then
   log_tee "bringing services back up after snapshot failure..."
   start_services
+  exit 1
+fi
+if ! dry_run_migrations; then
+  APPLIED_MIG_STATE="known"
+  APPLIED_MIG_LIST=""
+  log_tee " ${SYM_FAIL} migration transactional dry-run failed (zero changes were committed to the database)"
+  log_tee "bringing services back up on the OLD images..."
+  start_services
+  cleanup_update_lock_and_write_result "rolled_back" "1" "database migration dry-run failed"
   exit 1
 fi
 run_migrations || { handle_schema_failure "database migrations failed"; exit 1; }

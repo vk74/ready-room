@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Version: 0.26.3
+# Version: 0.28.5
 # Purpose: Execute pending database migrations against the db container.
 # Reads app.instance.schema_version and app.schema_migrations (checksum audit).
 # Update script: run-migrations.sh
@@ -8,6 +8,9 @@
 # - Receives DEPLOYMENT_DIR as $1 (~/evi on the server). Optional flags override
 #   the migrations directory, db container name, and database name. Optional
 #   --applied-list-file records each migration that commits, one basename per line.
+# - Optional --dry-run wraps the prelude and every pending migration in one
+#   transaction, then rolls it back. It does not truncate --applied-list-file,
+#   apply the prelude outside that transaction, or record audit rows.
 # - Sources config/app.env for APP_POSTGRES_DB (unless --db-name is given).
 # - Applies ${MIGRATIONS_DIR}/_prelude/*.sql unconditionally (idempotent helpers;
 #   not recorded in the audit table and they do not change schema_version)
@@ -19,6 +22,13 @@
 #   db/init/16_migration_audit_seed.sql make this precise on 0.23.2+ installs.
 # - Records every apply attempt in app.schema_migrations (success/failed/skipped).
 # - Exits 0 if all migrations applied or none pending; non-zero on failure
+#
+# Changes in v0.28.5:
+# - Optional --dry-run executes the prelude and pending migrations inside one
+#   transaction and rolls it back. Outer BEGIN/COMMIT lines are stripped so
+#   that transaction is the only wrapper.
+# - Dry-run does not truncate --applied-list-file and does not write
+#   app.schema_migrations. A SQL error exits 1 after the transaction aborts.
 #
 # Changes in v0.26.3:
 # - Optional --applied-list-file PATH. The file is truncated at the start of the
@@ -136,6 +146,9 @@ Options:
   --applied-list-file PATH
                          Truncate PATH at start, then append the basename of
                          each migration that commits successfully
+  --dry-run              Execute the prelude and pending migrations in one
+                         transaction and roll it back. Does not write the
+                         applied-list file or schema_migrations audit rows
   --help                 Show this help and exit
 EOF
 }
@@ -146,6 +159,7 @@ MIGRATIONS_DIR=""
 DB_CONTAINER="db"
 DB_NAME_OVERRIDE=""
 APPLIED_LIST_FILE=""
+DRY_RUN=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -184,6 +198,10 @@ while [[ $# -gt 0 ]]; do
       fi
       APPLIED_LIST_FILE="$2"
       shift 2
+      ;;
+    --dry-run)
+      DRY_RUN=1
+      shift
       ;;
     --*)
       err "unknown flag: $1"
@@ -472,11 +490,37 @@ should_apply_migration() {
   return 0
 }
 
+# Drop a top-level BEGIN/COMMIT so the dry-run transaction is the only wrapper.
+# BSD sed has no case-insensitive flag; awk toupper() works on BSD awk and mawk.
+strip_outer_transaction() {
+  awk '
+  {
+    line = $0
+    sub(/--.*$/, "", line)
+    gsub(/^[ \t]+|[ \t]+$/, "", line)
+    u = toupper(line)
+    if (u == "BEGIN;" || u == "BEGIN TRANSACTION;" || u == "COMMIT;" || u == "COMMIT TRANSACTION;") {
+      next
+    }
+    print $0
+  }
+  '
+}
+
+MIG_DRY_SQL=""
+cleanup_mig_dry_sql() {
+  if [[ -n "${MIG_DRY_SQL:-}" ]]; then
+    rm -f "$MIG_DRY_SQL"
+    MIG_DRY_SQL=""
+  fi
+}
+
 # --- Main ---
 main() {
   # Truncate before any migration (including prelude) so a failed run cannot
-  # leave names from a previous attempt in the list.
-  if [[ -n "${APPLIED_LIST_FILE}" ]]; then
+  # leave names from a previous attempt in the list. A dry-run must not touch
+  # the applied-list file.
+  if [[ "$DRY_RUN" -ne 1 && -n "${APPLIED_LIST_FILE}" ]]; then
     if ! : > "$APPLIED_LIST_FILE"; then
       err "could not initialize applied migration list ${APPLIED_LIST_FILE}"
       exit 1
@@ -499,7 +543,9 @@ main() {
     [[ -n "$env_db" ]] && db_name="$env_db"
   fi
 
-  apply_prelude "$db_name"
+  if [[ "$DRY_RUN" -ne 1 ]]; then
+    apply_prelude "$db_name"
+  fi
 
   local current_version
   current_version=$(get_current_schema_version "$db_name") || exit 1
@@ -518,17 +564,100 @@ main() {
     migration_files+=("$f")
   done
 
-  if [[ ${#migration_files[@]} -eq 0 ]]; then
+  if [[ ${#migration_files[@]} -eq 0 && "$DRY_RUN" -ne 1 ]]; then
     printf " ${SYM_OK} no pending migrations found; schema is up to date (%s)\n" "$current_version"
     exit 0
   fi
 
-  IFS=$'\n' migration_files=($(
-    for f in "${migration_files[@]}"; do
-      v=$(migration_version_prefix "$(basename "$f")")
-      printf '%s\t%s\n' "$(migration_sort_key "${v:-0.0.0}")" "$f"
-    done | sort | cut -f2-
-  )); unset IFS
+  if [[ ${#migration_files[@]} -gt 0 ]]; then
+    IFS=$'\n' migration_files=($(
+      for f in "${migration_files[@]}"; do
+        v=$(migration_version_prefix "$(basename "$f")")
+        printf '%s\t%s\n' "$(migration_sort_key "${v:-0.0.0}")" "$f"
+      done | sort | cut -f2-
+    )); unset IFS
+  fi
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    local -a pending_files=()
+    local basename migration_id file_version target_version checksum apply_decision
+    if [[ ${#migration_files[@]} -gt 0 ]]; then
+      for f in "${migration_files[@]}"; do
+        basename=$(basename "$f")
+        migration_id=$(migration_id_from_file "$basename")
+        file_version=$(migration_version_prefix "$basename")
+        target_version=$(extract_migration_version "$f")
+        checksum=$(file_sha256 "$f")
+
+        if [[ -z "$migration_id" || -z "$file_version" ]]; then
+          err "migration ${basename}: file name does not match m_<X.Y.Z>_<description>.sql"
+          exit 1
+        fi
+
+        if [[ -z "$target_version" ]]; then
+          err "migration ${basename}: no schema_version found in file (required)"
+          exit 1
+        fi
+
+        if [[ "$file_version" != "$target_version" ]]; then
+          err "migration ${basename}: version in file name (${file_version}) does not match schema_version inside the file (${target_version})"
+          exit 1
+        fi
+
+        apply_decision=0
+        should_apply_migration "$db_name" "$f" "$basename" "$migration_id" \
+          "$target_version" "$current_version" "$checksum" || apply_decision=$?
+
+        if [[ $apply_decision -eq 2 ]]; then
+          continue
+        fi
+        pending_files+=("$f")
+      done
+    fi
+
+    local dry_sql="" dry_output="" dry_exit=0 prelude_dir="" pf=""
+    dry_sql=$(mktemp "${TMPDIR:-/tmp}/app-mig-dryrun.XXXXXX")
+    MIG_DRY_SQL="$dry_sql"
+    trap cleanup_mig_dry_sql EXIT
+
+    log "transactional dry-run of ${#pending_files[@]} pending migration(s); changes will be rolled back"
+    {
+      printf 'BEGIN;\n'
+      prelude_dir="${MIGRATIONS_DIR}/_prelude"
+      if [[ -d "$prelude_dir" ]]; then
+        for pf in "${prelude_dir}"/*.sql; do
+          [[ -f "$pf" ]] || continue
+          strip_outer_transaction < "$pf"
+          printf '\n'
+        done
+      fi
+      if [[ ${#pending_files[@]} -gt 0 ]]; then
+        for f in "${pending_files[@]}"; do
+          printf "SELECT 'DRYRUN_STEP:' || '%s';\n" "$(sql_escape_literal "$(basename "$f")")"
+          strip_outer_transaction < "$f"
+          printf '\n'
+        done
+      fi
+      printf 'ROLLBACK;\n'
+    } > "$dry_sql"
+
+    set +e
+    dry_output=$(psql_exec_file "$db_name" "$dry_sql" 2>&1)
+    dry_exit=$?
+    set -e
+
+    cleanup_mig_dry_sql
+
+    if [[ $dry_exit -ne 0 ]]; then
+      printf " ${SYM_FAIL} transactional dry-run FAILED\n"
+      err "transactional dry-run failed; no changes were committed."
+      printf '%s\n' "$dry_output" >&2
+      exit 1
+    fi
+
+    printf " ${SYM_OK} transactional dry-run of %d pending migration(s) succeeded (rolled back cleanly)\n" "${#pending_files[@]}"
+    exit 0
+  fi
 
   local applied=0
   local skipped=0

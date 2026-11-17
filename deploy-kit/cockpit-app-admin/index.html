@@ -1,9 +1,13 @@
 <!DOCTYPE html>
-<!-- Version: 0.28.3 -->
+<!-- Version: 0.28.5 -->
 <!-- Cockpit package: EVI administration panel with left navigation and right content area. -->
 <!-- Provides admin tools: disk status, container environment, full backup, password management, DB tools (pgAdmin), updates. -->
 <!-- Cockpit package; filename: index.html -->
 <!--
+  Changes in v0.28.5:
+  - Updates section shows the pre-update instance check report and a Re-check instance button above the action row.
+  - The Start update sudo modal includes a warnings acknowledgement checkbox.
+
   Changes in v0.28.3:
   - Removed the Access key (`#github-token-card`) card from the Updates section.
   - Replaced the phase list and notes in `#sudo-modal` with a prominent backup/snapshot recommendation banner and a short explanation of service restart and one-time sudo usage.
@@ -543,6 +547,19 @@
             <pre id="release-notes" class="update-release-notes-content"></pre>
           </div>
 
+          <!-- Pre-update instance verification report -->
+          <div id="precheck-report-wrapper" class="update-precheck-wrapper hidden">
+            <div class="update-precheck-header">
+              <div class="update-precheck-title-group">
+                <h3>Pre-update instance check</h3>
+                <span id="precheck-status-badge" class="update-badge update-badge-neutral">clean</span>
+              </div>
+              <button type="button" id="btn-recheck" class="update-btn update-btn-small">Re-check instance</button>
+            </div>
+            <p id="precheck-summary" class="update-precheck-summary"></p>
+            <div id="precheck-items-list" class="update-precheck-list hidden"></div>
+          </div>
+
           <!-- Single action row: Check / Download / Delete / Start update -->
           <div class="update-actions">
             <button type="button" id="btn-check" class="update-btn update-btn-secondary">
@@ -595,6 +612,12 @@
         <p class="update-sudo-why">
           Services will briefly restart; the update continues in the background. Sudo is used once to update host packages and Cockpit, then cleared.
         </p>
+        <div id="sudo-warnings-ack-wrapper" class="update-sudo-warnings-ack hidden">
+          <label class="update-sudo-ack-label">
+            <input type="checkbox" id="chk-ack-warnings" class="update-beta-checkbox" />
+            <span>I have reviewed the instance drift warnings and confirm proceeding with the update.</span>
+          </label>
+        </div>
         <label class="update-sudo-label" for="sudo-password-input">Sudo password</label>
         <input type="password" id="sudo-password-input" class="update-sudo-input" autocomplete="current-password" placeholder="Linux administrator password" />
         <p id="sudo-error" class="update-sudo-error hidden">Incorrect password. Please try again.</p>
