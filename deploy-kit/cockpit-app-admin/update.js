@@ -1,4 +1,4 @@
-/* Version: 0.28.5
+/* Version: 0.28.6
  * Purpose: Main logic for the Cockpit updates panel.
  * Handles check for updates (list releases), download of the selected release, delete of the staged kit,
  * the pre-update instance check, and install of the staged kit (detached + polling).
@@ -7,6 +7,9 @@
  * State machine: IDLE | INSTALLING | FINISHED_SUCCESS | FINISHED_FAILED.
  * On init, calls update-progress first to reconnect to an in-progress update if any.
  * Cockpit package; filename: update.js
+ *
+ * Changes in v0.28.6:
+ * - Copy output copies the update log via the clipboard API, with a textarea fallback, and shows Copied or Copy failed for 1.5 seconds.
  *
  * Changes in v0.28.5:
  * - Renders the pre-update instance check and runs verify-instance from Re-check instance.
@@ -209,6 +212,8 @@
   };
 
   var outputRawText = '';
+  var copyOutputTimer = null;
+  var copyFeedbackGen = 0;
 
   /* =====================================================================
    * Update status display — read updates.json and refresh UI
@@ -1191,8 +1196,72 @@
     els.output.scrollTop = els.output.scrollHeight;
   }
 
+  function showCopyFeedback(label) {
+    if (!els.btnCopyOutput) return;
+    if (copyOutputTimer) {
+      clearTimeout(copyOutputTimer);
+      copyOutputTimer = null;
+    }
+    var gen = ++copyFeedbackGen;
+    els.btnCopyOutput.textContent = label;
+    copyOutputTimer = setTimeout(function () {
+      if (gen !== copyFeedbackGen) return;
+      if (els.btnCopyOutput) els.btnCopyOutput.textContent = 'Copy output';
+      copyOutputTimer = null;
+    }, 1500);
+  }
+
+  function clearCopyFeedback() {
+    copyFeedbackGen++;
+    if (copyOutputTimer) {
+      clearTimeout(copyOutputTimer);
+      copyOutputTimer = null;
+    }
+    if (els.btnCopyOutput) {
+      els.btnCopyOutput.textContent = 'Copy output';
+    }
+  }
+
+  function copyWithTextarea(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch (e) {
+      ok = false;
+    }
+    document.body.removeChild(ta);
+    return ok;
+  }
+
+  function copyOutput() {
+    var text = outputRawText || (els.output ? els.output.textContent : '');
+    if (!text) return;
+    var genAtStart = copyFeedbackGen;
+    function finish(ok) {
+      if (genAtStart !== copyFeedbackGen) return;
+      showCopyFeedback(ok ? 'Copied' : 'Copy failed');
+    }
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard.writeText(text).then(function () {
+        finish(true);
+      }).catch(function () {
+        finish(copyWithTextarea(text));
+      });
+      return;
+    }
+    finish(copyWithTextarea(text));
+  }
+
   function clearOutput() {
     outputRawText = '';
+    clearCopyFeedback();
     els.output.innerHTML = '';
     els.outputWrapper.classList.add('hidden');
     hideStatus();
@@ -1244,6 +1313,7 @@
     els.btnDownload = document.getElementById('btn-download');
     els.btnDeleteDownload = document.getElementById('btn-delete-download');
     els.btnInstall = document.getElementById('btn-install');
+    els.btnCopyOutput = document.getElementById('btn-copy-output');
     els.btnClear = document.getElementById('btn-clear');
     els.operationStatus = document.getElementById('operation-status');
     els.progressWrapper = document.getElementById('progress-wrapper');
@@ -1291,6 +1361,9 @@
     });
     window.addEventListener('focus', refreshSystemStateOnFocus);
     document.addEventListener('visibilitychange', refreshSystemStateOnFocus);
+    if (els.btnCopyOutput) {
+      els.btnCopyOutput.addEventListener('click', copyOutput);
+    }
     els.btnClear.addEventListener('click', function () {
       resetFinishedState();
       clearOutput();

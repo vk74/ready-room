@@ -1,9 +1,12 @@
 <!DOCTYPE html>
-<!-- Version: 0.28.5 -->
+<!-- Version: 0.28.6 -->
 <!-- Cockpit package: EVI administration panel with left navigation and right content area. -->
 <!-- Provides admin tools: disk status, container environment, full backup, password management, DB tools (pgAdmin), updates. -->
 <!-- Cockpit package; filename: index.html -->
 <!--
+  Changes in v0.28.6:
+  - Updates output header has a Copy output button next to Clear.
+
   Changes in v0.28.5:
   - Updates section shows the pre-update instance check report and a Re-check instance button above the action row.
   - The Start update sudo modal includes a warnings acknowledgement checkbox.
@@ -591,7 +594,10 @@
           <div id="output-wrapper" class="update-output-wrapper hidden">
             <div class="update-output-header">
               <h3>Output</h3>
-              <button type="button" id="btn-clear" class="update-btn update-btn-small">Clear</button>
+              <div class="update-output-actions">
+                <button type="button" id="btn-copy-output" class="update-btn update-btn-small">Copy output</button>
+                <button type="button" id="btn-clear" class="update-btn update-btn-small">Clear</button>
+              </div>
             </div>
             <pre id="output" class="update-output"></pre>
           </div>

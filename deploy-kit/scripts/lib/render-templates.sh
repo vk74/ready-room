@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Version: 0.27.2
+# Version: 0.28.6
 # Purpose: Shared template rendering functions for application deploy and update processes.
 # Deployment file: render-templates.sh
 # Logic: Sourced by install.sh and apply-update.sh. Provides functions to render quadlet templates,
@@ -14,6 +14,10 @@
 #   APP_QUADLET_DIR — path to ~/.config/containers/systemd/
 #   APP_STATE_DIR   — path to config/state/ directory
 #   TLS_DIR         — path to config/tls/ directory
+#
+# Changes in v0.28.6:
+# - Host RAM GiB adds 0.75 GiB before flooring so a 4 GB VM that reports about 3.3–3.9 GiB counts as 4.
+# - The low-RAM warning text is "ram < 4gb" when measured RAM is at least 2 GiB and below 4 GiB.
 #
 # Changes in v0.27.2:
 # - Add APP_INSTALL_REPO to deploy_render_template_file() keys (worker quadlet).
@@ -93,8 +97,12 @@ render_validate_paths() {
   return $missing
 }
 
-# Host RAM in GiB (integer MemTotal_kB / 1024 / 1024). Half-open bounds.
-# APP_HOST_MEM_GIB: test hook — if set and non-empty, return that value instead.
+# Host RAM in GiB. Linux VMs provisioned with N GB often report MemTotal below
+# that size because of kernel and hypervisor reservations (a 4 GB VM can report
+# about 3.3–3.9 GiB, for example 3480248 kB). Add 0.75 GiB (786432 kB) before
+# dividing so those hosts resolve to the provisioned size: 4 GB VMs at or above
+# 3.25 GiB become 4, 8 GB VMs become 8, while 2 GB stays 2, 3 GB stays 3, and
+# 1 GB stays 1. APP_HOST_MEM_GIB, when set and non-empty, is returned unchanged.
 deploy_host_mem_gib() {
   if [[ -n "${APP_HOST_MEM_GIB:-}" ]]; then
     printf '%s\n' "${APP_HOST_MEM_GIB}"
@@ -102,10 +110,10 @@ deploy_host_mem_gib() {
   fi
   local mem_kb
   mem_kb="$(awk '/^MemTotal:/ { print $2; exit }' /proc/meminfo)"
-  printf '%s\n' "$((mem_kb / 1024 / 1024))"
+  printf '%s\n' "$(((mem_kb + 786432) / 1024 / 1024))"
 }
 
-# < 2: print fail to stderr, return 1 (no exit). 2 ≤ x < 4: WARN, return 0. Else return 0.
+# < 2: print fail to stderr, return 1 (no exit). 2 ≤ x < 4: WARN "ram < 4gb", return 0. Else return 0.
 deploy_check_host_mem() {
   local host_gib
   host_gib="$(deploy_host_mem_gib)"
@@ -114,7 +122,7 @@ deploy_check_host_mem() {
     return 1
   fi
   if [[ "${host_gib}" -lt 4 ]]; then
-    printf 'WARN: ram 2-4gb: suitable for testing, not recommended for production\n' >&2
+    printf 'WARN: ram < 4gb: suitable for testing, not recommended for production\n' >&2
   fi
   return 0
 }

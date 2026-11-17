@@ -1,8 +1,11 @@
-/* Version: 0.28.5
+/* Version: 0.28.6
  * Purpose: Styles for the admin tools Cockpit package.
  * Two-panel layout: left navigation sidebar + right content area.
  * Includes dark theme support via .theme-dark class on <html>, synced from Cockpit shell.
  * Cockpit package; filename: admin.css
+ *
+ * Changes in v0.28.6:
+ * - Update output header actions (Copy output and Clear) sit in a row.
  *
  * Changes in v0.28.5:
  * - Pre-update instance check report styles, including blocker and warning rows, for light and dark themes.
@@ -1184,6 +1187,12 @@ html.theme-dark .update-progress-text {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
+}
+
+.update-output-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .update-output-header h3 {

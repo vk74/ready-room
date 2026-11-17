@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Version: 0.27.4
+# Version: 0.28.6
 # Purpose: Interactive installer for application production deployment (images-only; no build).
 # Deployment file: install.sh
 # Logic:
@@ -13,6 +13,10 @@
 #   menu stays even if both env files exist.
 # - Non-interactive: __cockpit_apply_restart re-runs run_deploy_init + systemctl restart without prompts (Cockpit admin panel).
 # - Non-interactive: __continue_deploy resumes deploy_full() after exec re-launch with version-matched installer.
+#
+# Changes in v0.28.6:
+# - The check_resources fallback uses the same 0.75 GiB host-RAM tolerance as deploy_host_mem_gib.
+# - The low-RAM warning text is "ram < 4gb".
 #
 # Changes in v0.27.4:
 # - Default APP_INSTALL_REPO is vk74/ready-room.
@@ -1560,7 +1564,7 @@ check_resources() {
   else
     local mem_kb
     mem_kb="$(awk '/^MemTotal:/ { print $2; exit }' /proc/meminfo)"
-    host_gib=$((mem_kb / 1024 / 1024))
+    host_gib=$(((mem_kb + 786432) / 1024 / 1024))
   fi
   if [[ "${helpers}" -eq 1 ]]; then
     if ! deploy_check_host_mem; then
@@ -1585,9 +1589,9 @@ check_resources() {
   fi
   if [[ "${host_gib}" -lt 4 ]]; then
     if [[ -n "${profile_text}" ]]; then
-      printf "${YELLOW}warn (ram 2-4gb: suitable for testing, not recommended for production; %s)${NC}\n" "${profile_text}"
+      printf "${YELLOW}warn (ram < 4gb: suitable for testing, not recommended for production; %s)${NC}\n" "${profile_text}"
     else
-      printf "${YELLOW}warn (ram 2-4gb: suitable for testing, not recommended for production)${NC}\n"
+      printf "${YELLOW}warn (ram < 4gb: suitable for testing, not recommended for production)${NC}\n"
     fi
     return 0
   fi

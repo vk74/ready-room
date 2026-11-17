@@ -1,4 +1,4 @@
-# EVI README Version 0.28.5-beta
+# EVI README Version 0.28.6-beta
 
 Before install, read the [Prepare your VM for deployment](prepare-your-vm-for-evi-deployment.md) guide — host requirements, disk layout, and filesystem recommendations.
 
