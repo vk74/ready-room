@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
 #
-# Version: 0.28.5
+# Version: 0.28.7
 # Purpose: Read-only pre-update inspection of an installed instance. Checks the
 #   database schema version, migration audit, catalog baseline, app settings,
 #   env and secrets, a template-render dry-run, and manual edits of rendered
 #   files. Writes a JSON report and exits 1 on blockers, 2 on warnings, or 0
-#   when the instance is clean or warnings are explicitly allowed.
+#   when the instance is clean or warnings are explicitly allowed. Schema drift
+#   against the reference master schema is a blocker and is printed to stdout.
 # File: verify-instance.sh
+#
+# Changes in v0.28.7:
+# - Missing reference baseline manifest (baseline_manifest_missing) is a BLOCKER.
+# - When database schema drift or schema_version_mismatch is detected, prints an
+#   explicit notice that upgrades are only supported for unmodified databases
+#   matching the reference master schema.
 #
 # Changes in v0.28.5:
 # - Initial precheck: database, catalog baseline, config dry-run, rendered-file drift.
@@ -252,6 +259,7 @@ check_db_and_migrations() {
 
   if [[ -n "$installed_base" && "$installed_base" != "unknown" && "$DB_SCHEMA_VERSION" != "$installed_base" ]]; then
     add_finding "BLOCKER" "schema_version_mismatch" "app.instance.schema_version" "Database schema_version (${DB_SCHEMA_VERSION}) does not match installed version (${installed_base})"
+    SCHEMA_DRIFT_FOUND=1
   fi
 
   if ! exists_raw="$(psql_query "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'app' AND table_name = 'schema_migrations')")"; then
@@ -297,34 +305,40 @@ check_db_and_migrations() {
 check_db_catalog_baseline() {
   local ref_manifest target_manifest target_base rows skey sval schema
   printf 'checking catalog baseline...\n'
-  [[ "$DB_REACHABLE" -eq 1 ]] || return 0
+  # One pass. break skips the remaining catalog queries and still prints the
+  # standard-schema notice below when drift was already recorded.
+  while :; do
+  [[ "$DB_REACHABLE" -eq 1 ]] || break
 
   target_base="${TARGET_VERSION%%-*}"
   ref_manifest="$(locate_manifest "$DB_SCHEMA_VERSION")"
   target_manifest="$(locate_manifest "$target_base")"
 
   if [[ -z "$ref_manifest" ]]; then
-    add_finding "WARNING" "baseline_manifest_missing" "baselines/${DB_SCHEMA_VERSION}.manifest" "Reference baseline manifest for version ${DB_SCHEMA_VERSION} is not present in the kit; catalog object diff skipped"
+    add_finding "BLOCKER" "baseline_manifest_missing" "baselines/${DB_SCHEMA_VERSION}.manifest" "Reference baseline manifest for version ${DB_SCHEMA_VERSION} is not present in the kit; cannot verify standard database schema"
+    SCHEMA_DRIFT_FOUND=1
   else
     if ! dump_catalog_baseline "${DB_CONTAINER}" "${DB_NAME}" > "${TMP_WORK}/live.manifest"; then
       add_finding "BLOCKER" "db_unreachable" "${DB_CONTAINER}" "Database container ${DB_CONTAINER} is not running or cannot be queried"
-      return 0
+      break
     fi
     if [[ -n "$target_manifest" ]]; then
       if ! compare_catalog_baselines "$ref_manifest" "${TMP_WORK}/live.manifest" "$target_manifest" > "${TMP_WORK}/catalog-findings.tsv"; then
         add_finding "BLOCKER" "db_unreachable" "${DB_CONTAINER}" "Database container ${DB_CONTAINER} is not running or cannot be queried"
-        return 0
+        break
       fi
     else
       if ! compare_catalog_baselines "$ref_manifest" "${TMP_WORK}/live.manifest" > "${TMP_WORK}/catalog-findings.tsv"; then
         add_finding "BLOCKER" "db_unreachable" "${DB_CONTAINER}" "Database container ${DB_CONTAINER} is not running or cannot be queried"
-        return 0
+        break
       fi
     fi
     if [[ -f "${TMP_WORK}/catalog-findings.tsv" ]]; then
       while IFS=$'\t' read -r sev code obj msg; do
-        [[ -z "${sev:-}" ]] && continue
-        add_finding "$sev" "$code" "$obj" "$msg"
+        if [[ -n "${sev:-}" ]]; then
+          SCHEMA_DRIFT_FOUND=1
+          add_finding "$sev" "$code" "$obj" "$msg"
+        fi
       done < "${TMP_WORK}/catalog-findings.tsv"
     fi
   fi
@@ -369,12 +383,20 @@ ORDER BY 1
 SQL
   if ! rows="$(psql_query "$(cat "${TMP_WORK}/settings-check.sql")")"; then
     add_finding "BLOCKER" "db_unreachable" "${DB_CONTAINER}" "Database container ${DB_CONTAINER} is not running or cannot be queried"
-    return 0
+    break
   fi
   while IFS=$'\t' read -r skey sval schema; do
     [[ -z "$skey" ]] && continue
     add_finding "BLOCKER" "setting_value_invalid" "app.app_settings:${skey}" "Current value '${sval}' violates validation_schema"
   done <<< "$rows"
+  break
+  done
+
+  if [[ "$SCHEMA_DRIFT_FOUND" -eq 1 ]]; then
+    printf " %s Database schema differs from the reference master schema for version %s.\n" "${SYM_FAIL}" "${DB_SCHEMA_VERSION:-unknown}"
+    printf "   Upgrades are only supported for unmodified databases that match the standard master schema.\n"
+    printf "   Restore the database schema to the standard state before running the update.\n"
+  fi
 }
 
 # Send template writes that use the live state directory into the dry-run tree.
@@ -793,6 +815,7 @@ resolve_db_name
 INSTALLED_VERSION="$(read_package_version "${APP_HOME}/package.json")"
 TARGET_VERSION="$(read_package_version "${STAGED_DIR}/package.json")"
 DB_REACHABLE=0
+SCHEMA_DRIFT_FOUND=0
 DB_SCHEMA_VERSION=""
 
 TMP_WORK="$(mktemp -d "${TMPDIR:-/tmp}/app-verify-instance.XXXXXX")"

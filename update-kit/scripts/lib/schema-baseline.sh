@@ -1,13 +1,21 @@
 #!/usr/bin/env bash
 #
-# Version: 0.28.5
+# Version: 0.28.7
 # Purpose: Sourceable read-only catalog baseline for schema app. dump_catalog_baseline
-#   prints one sorted unique row per table, column, constraint, index, function,
+#   prints one sorted unique row per table, sequence, column (logical live position),
+#   constraint (including PostgreSQL 18 NOT NULL, contype = 'n'), index, function,
 #   trigger, enum, setting key, permission key, and role group. compare_catalog_baselines
-#   prints blocker and warning findings between a reference manifest, a live
-#   manifest, and an optional target-release manifest. No shell options are
-#   changed in the caller's shell. No output when sourced.
+#   treats every catalog difference in schema app as a BLOCKER between a reference
+#   manifest, a live manifest, and an optional target-release manifest. No shell
+#   options are changed in the caller's shell. No output when sourced.
 # File: schema-baseline.sh
+#
+# Changes in v0.28.7:
+# - dump_catalog_baseline includes SEQUENCE definitions, logical live column
+#   positions (row_number over non-dropped attnum), and PostgreSQL 18 NOT NULL
+#   constraints (contype = 'n').
+# - compare_catalog_baselines classifies all catalog differences in schema app
+#   (modified_function_or_trigger and extra_schema_object) as BLOCKER.
 #
 # Changes in v0.28.5:
 # - Initial library: dump_catalog_baseline and compare_catalog_baselines.
@@ -22,7 +30,9 @@ APP_LIB_SCHEMA_BASELINE_SH=1
 
 # dump_catalog_baseline <db_container> <db_name>
 # Read-only catalog manifest on stdout: SECTION, obj_key, spec, tab-separated.
-# psql failure is the function status (the pipeline does not mask it).
+# Sequences, logical live column positions, and PostgreSQL 18 NOT NULL
+# constraints (contype = 'n') are included. psql failure is the function status
+# (the pipeline does not mask it).
 dump_catalog_baseline() {
   local db_container="${1:-}"
   local db_name="${2:-}"
@@ -39,12 +49,21 @@ FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE n.nspname = 'app' AND c.relkind IN ('r', 'v', 'm', 'p') AND NOT c.relispartition
 UNION ALL
+SELECT 'SEQUENCE',
+       c.relname::text,
+       format_type(s.seqtypid, NULL) || '|' || s.seqincrement::text || '|' || s.seqmin::text || '|' || s.seqmax::text || '|' || s.seqcycle::text
+FROM pg_sequence s
+JOIN pg_class c ON c.oid = s.seqrelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'app'
+UNION ALL
 SELECT 'COLUMN',
        c.table_name || '.' || c.column_name,
-       c.data_type || '|' || c.udt_name || '|' || c.is_nullable || '|' || COALESCE(regexp_replace(c.column_default, '[[:space:]]+', ' ', 'g'), '')
+       (row_number() OVER (PARTITION BY cl.oid ORDER BY a.attnum))::text || '|' || c.data_type || '|' || c.udt_name || '|' || c.is_nullable || '|' || COALESCE(regexp_replace(c.column_default, '[[:space:]]+', ' ', 'g'), '')
 FROM information_schema.columns c
 JOIN pg_class cl ON cl.relname = c.table_name
 JOIN pg_namespace n ON n.oid = cl.relnamespace AND n.nspname = c.table_schema
+JOIN pg_attribute a ON a.attrelid = cl.oid AND a.attname = c.column_name AND a.attnum > 0 AND NOT a.attisdropped
 WHERE c.table_schema = 'app' AND NOT cl.relispartition
 UNION ALL
 SELECT 'CONSTRAINT',
@@ -53,7 +72,7 @@ SELECT 'CONSTRAINT',
 FROM pg_constraint con
 JOIN pg_class cl ON cl.oid = con.conrelid
 JOIN pg_namespace n ON n.oid = cl.relnamespace
-WHERE n.nspname = 'app' AND con.contype IN ('p', 'u', 'f', 'c') AND NOT cl.relispartition
+WHERE n.nspname = 'app' AND con.contype IN ('p', 'u', 'f', 'c', 'n') AND NOT cl.relispartition
 UNION ALL
 SELECT 'INDEX',
        t.relname || '.' || i.relname,
@@ -126,7 +145,8 @@ SQL
 
 # compare_catalog_baselines <ref_manifest> <live_manifest> [target_manifest]
 # Findings on stdout, one per line: SEVERITY, CODE, OBJECT, MESSAGE (tab-separated),
-# sorted byte-wise. Exit 0 when the comparison ran, including when findings exist.
+# sorted byte-wise. Every catalog difference in schema app is a BLOCKER.
+# Exit 0 when the comparison ran, including when findings exist.
 # target_manifest participates only when the path is given and the file is non-empty.
 compare_catalog_baselines() {
   local ref_manifest="${1:-}"
@@ -211,7 +231,7 @@ END {
         emit("BLOCKER", "missing_or_tampered_system_key", "SETTING_KEY:" obj,
              "System setting metadata for " obj " differs from reference")
       } else if (sec == "FUNCTION" || sec == "TRIGGER") {
-        emit("WARNING", "modified_function_or_trigger", sec ":" obj,
+        emit("BLOCKER", "modified_function_or_trigger", sec ":" obj,
              "Definition of " sec " " obj " differs from reference")
       } else {
         emit("BLOCKER", "modified_schema_object", sec ":" obj,
@@ -228,7 +248,7 @@ END {
       emit("BLOCKER", "target_collision", sec ":" obj,
            "Custom object " obj " (" sec ") conflicts with target release definition")
     } else {
-      emit("WARNING", "extra_schema_object", sec ":" obj,
+      emit("BLOCKER", "extra_schema_object", sec ":" obj,
            "Extra object " obj " (" sec ") is not in reference baseline")
     }
   }

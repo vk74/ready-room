@@ -1,9 +1,12 @@
 <!DOCTYPE html>
-<!-- Version: 0.28.6 -->
+<!-- Version: 0.28.7 -->
 <!-- Cockpit package: EVI administration panel with left navigation and right content area. -->
 <!-- Provides admin tools: disk status, container environment, full backup, password management, DB tools (pgAdmin), updates. -->
 <!-- Cockpit package; filename: index.html -->
 <!--
+  Changes in v0.28.7:
+  - Added `#beta-modal` confirmation dialog warning that beta versions are not recommended for production installations.
+
   Changes in v0.28.6:
   - Updates output header has a Copy output button next to Clear.
 
@@ -630,6 +633,24 @@
         <div class="update-sudo-actions">
           <button type="button" id="btn-sudo-cancel" class="update-btn update-btn-secondary">Cancel</button>
           <button type="button" id="btn-sudo-confirm" class="update-btn update-btn-primary">Start update</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Beta versions warning modal (outside scrollable main) -->
+    <div id="beta-modal" class="update-sudo-modal hidden">
+      <div class="update-sudo-backdrop"></div>
+      <div class="update-sudo-box">
+        <h3 class="update-sudo-title">Enable beta versions</h3>
+        <p class="update-sudo-backup-warning">
+          Beta versions are pre-release builds intended for testing and evaluation. We do not recommend using beta versions for production installations.
+        </p>
+        <p class="update-sudo-why">
+          Do you want to enable beta versions in the release list?
+        </p>
+        <div class="update-sudo-actions">
+          <button type="button" id="btn-beta-cancel" class="update-btn update-btn-secondary">Cancel</button>
+          <button type="button" id="btn-beta-confirm" class="update-btn update-btn-primary">Enable beta versions</button>
         </div>
       </div>
     </div>

@@ -1,4 +1,4 @@
-/* Version: 0.28.6
+/* Version: 0.28.7
  * Purpose: Main logic for the Cockpit updates panel.
  * Handles check for updates (list releases), download of the selected release, delete of the staged kit,
  * the pre-update instance check, and install of the staged kit (detached + polling).
@@ -7,6 +7,10 @@
  * State machine: IDLE | INSTALLING | FINISHED_SUCCESS | FINISHED_FAILED.
  * On init, calls update-progress first to reconnect to an in-progress update if any.
  * Cockpit package; filename: update.js
+ *
+ * Changes in v0.28.7:
+ * - When pre-update verification reports master-schema discrepancies, prints a clear warning in `#output` (and in the precheck summary) stating that upgrades are only supported for unmodified databases matching the standard master schema.
+ * - Checking `Enable beta versions` (`#chk-beta`) opens `#beta-modal` warning that beta versions are not recommended for production installations before saving `set-include-beta true`.
  *
  * Changes in v0.28.6:
  * - Copy output copies the update log via the clipboard API, with a textarea fallback, and shows Copied or Copy failed for 1.5 seconds.
@@ -185,6 +189,19 @@
 
   var DISPATCH_PATH = '/usr/local/share/cockpit/app-admin/update-dispatch.sh';
   var POLL_INTERVAL_MS = 2000;
+
+  // Precheck codes that mean the live database does not match the reference
+  // master schema. An upgrade is supported only when none of these are present.
+  var SCHEMA_DRIFT_CODES = {
+    schema_version_mismatch: true,
+    baseline_manifest_missing: true,
+    missing_schema_object: true,
+    modified_schema_object: true,
+    modified_function_or_trigger: true,
+    extra_schema_object: true,
+    target_collision: true,
+    missing_or_tampered_system_key: true
+  };
 
   /* =====================================================================
    * DOM references
@@ -366,6 +383,61 @@
     els.btnCheck.textContent = actions.checkLabel;
   }
 
+  // Returns precheck items whose code is a master-schema drift finding.
+  // Items with any other code, or with no code, are left out.
+  function getSchemaDriftItems(precheck) {
+    var items = (precheck && Array.isArray(precheck.items)) ? precheck.items : [];
+    var drift = [];
+    var i;
+    for (i = 0; i < items.length; i++) {
+      var item = items[i];
+      if (item && item.code && SCHEMA_DRIFT_CODES[item.code] === true) {
+        drift.push(item);
+      }
+    }
+    return drift;
+  }
+
+  // Uses the report's count field when it is a number; otherwise counts items
+  // of that severity. The summary must not print "undefined".
+  function precheckSeverityTotal(precheck, countKey, severity) {
+    if (precheck && typeof precheck[countKey] === 'number') {
+      return precheck[countKey];
+    }
+    var items = (precheck && Array.isArray(precheck.items)) ? precheck.items : [];
+    var total = 0;
+    var i;
+    for (i = 0; i < items.length; i++) {
+      if (items[i] && items[i].severity === severity) total++;
+    }
+    return total;
+  }
+
+  // Appends the master-schema warning to #output once. A later render of the
+  // same text is a no-op so refresh and re-check do not duplicate the notice.
+  function ensureSchemaDriftOutputNotice(precheck) {
+    var driftItems = getSchemaDriftItems(precheck);
+    if (driftItems.length === 0) return;
+    if (els.output && els.output.textContent.indexOf('Upgrades are only supported for unmodified databases') !== -1) return;
+    if (els.outputWrapper) els.outputWrapper.classList.remove('hidden');
+    var lines = [
+      '',
+      ' [✗] Database schema differs from the reference master schema.',
+      '     Upgrades are only supported for unmodified databases that match the standard master schema.',
+      '     Discrepancies with the master schema:'
+    ];
+    driftItems.forEach(function (item) {
+      var sev = item.severity || 'BLOCKER';
+      var code = item.code ? ' (' + item.code + ')' : '';
+      var obj = item.object ? ' ' + item.object + ':' : '';
+      var msg = item.message || '';
+      lines.push('      - [' + sev + ']' + code + obj + ' ' + msg);
+    });
+    lines.push('     Restore the database schema to the standard state and click Re-check instance before updating.');
+    lines.push('');
+    appendOutput(lines.join('\n'));
+  }
+
   function renderPrecheckReport(d, actions) {
     if (!els.precheckWrapper) return;
     if (!(d && d.stagedVersion && d.precheck && typeof d.precheck === 'object')) {
@@ -405,7 +477,18 @@
       } else if (status === 'warnings') {
         els.precheckSummary.textContent = 'Instance drift was found. Review the warnings and acknowledge them before starting the update.';
       } else if (status === 'blockers') {
-        els.precheckSummary.textContent = 'Blocking issues must be resolved before the update can start. Fix them, then click Re-check instance.';
+        var p = d.precheck;
+        var driftItems = (p && p.status === 'blockers') ? getSchemaDriftItems(p) : [];
+        if (driftItems.length > 0) {
+          var blockers = precheckSeverityTotal(p, 'blockersCount', 'BLOCKER');
+          var warnings = precheckSeverityTotal(p, 'warningsCount', 'WARNING');
+          els.precheckSummary.textContent = 'Blocking issues were found (' + blockers + ' blocker(s)'
+            + (warnings > 0 ? ', ' + warnings + ' warning(s)' : '')
+            + '). Database schema differs from the reference master schema — upgrades are only supported for unmodified databases. Restore the database schema to the standard state and click Re-check instance.';
+          ensureSchemaDriftOutputNotice(p);
+        } else {
+          els.precheckSummary.textContent = 'Blocking issues must be resolved before the update can start. Fix them, then click Re-check instance.';
+        }
       } else {
         els.precheckSummary.textContent = '';
       }
@@ -929,9 +1012,18 @@
    * Sudo password modal
    * ===================================================================== */
 
+  // Moves update dialogs onto document.body so a scroll container cannot clip
+  // position:fixed. Safe to call more than once; an element already on body stays put.
   function ensureUpdateDialogPortaled(el) {
-    if (el && el.parentNode !== document.body) {
-      document.body.appendChild(el);
+    var sudoModal = document.getElementById('sudo-modal');
+    var betaModal = document.getElementById('beta-modal');
+    var nodes = [el, sudoModal, betaModal];
+    var i;
+    for (i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      if (node && node.parentNode !== document.body) {
+        document.body.appendChild(node);
+      }
     }
   }
 
@@ -963,6 +1055,47 @@
   function hideSudoModal() {
     var modal = document.getElementById('sudo-modal');
     if (modal) modal.classList.add('hidden');
+  }
+
+  // Persists the beta-channel preference and drops the in-memory release list.
+  // The list belongs to the previous channel until the next check completes.
+  function applyIncludeBeta(enabled) {
+    state.includeBeta = enabled;
+    state.releasesList = [];
+    state.selectedVersion = null;
+    hideReleasesList();
+    hideReleaseNotes();
+    refreshUI();
+
+    var betaProc = cockpit.spawn([DISPATCH_PATH, 'set-include-beta', enabled ? 'true' : 'false'], {
+      err: 'message'
+    });
+
+    betaProc.then(function () {
+      loadStatus();
+    });
+
+    betaProc.catch(function (ex) {
+      var msg = 'Could not save the beta setting.';
+      if (ex && ex.message) {
+        msg += ' ' + ex.message;
+      }
+      showStatus('error', msg);
+      loadStatus();
+    });
+  }
+
+  // Shows the beta warning. Checking the box does not enable beta until confirm.
+  function showBetaModal() {
+    if (!els.betaModal) return;
+    ensureUpdateDialogPortaled(els.betaModal);
+    els.betaModal.classList.remove('hidden');
+    if (els.btnBetaCancel) els.btnBetaCancel.focus();
+  }
+
+  // Closes the beta warning without changing the saved preference.
+  function hideBetaModal() {
+    if (els.betaModal) els.betaModal.classList.add('hidden');
   }
 
   function verifySudoAndInstall() {
@@ -1325,6 +1458,9 @@
     els.releaseNotes = document.getElementById('release-notes');
     els.compatibilityWarning = document.getElementById('compatibility-warning');
     els.chkBeta = document.getElementById('chk-beta');
+    els.betaModal = document.getElementById('beta-modal');
+    els.btnBetaCancel = document.getElementById('btn-beta-cancel');
+    els.btnBetaConfirm = document.getElementById('btn-beta-confirm');
     els.releasesWrapper = document.getElementById('releases-list-wrapper');
     els.releasesList = document.getElementById('releases-list');
     els.precheckWrapper = document.getElementById('precheck-report-wrapper');
@@ -1386,31 +1522,36 @@
         if (e.key === 'Escape') hideSudoModal();
       });
     }
+    ensureUpdateDialogPortaled(document.getElementById('sudo-modal'));
+    if (els.btnBetaCancel) {
+      els.btnBetaCancel.addEventListener('click', hideBetaModal);
+    }
+    if (els.btnBetaConfirm) {
+      els.btnBetaConfirm.addEventListener('click', function () {
+        hideBetaModal();
+        if (els.chkBeta) els.chkBeta.checked = true;
+        applyIncludeBeta(true);
+      });
+    }
+    if (els.betaModal) {
+      var betaBackdrop = els.betaModal.querySelector('.update-sudo-backdrop');
+      if (betaBackdrop) {
+        betaBackdrop.addEventListener('click', hideBetaModal);
+      }
+    }
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape') return;
+      if (!els.betaModal || els.betaModal.classList.contains('hidden')) return;
+      hideBetaModal();
+    });
     if (els.chkBeta) {
       els.chkBeta.addEventListener('change', function () {
-        state.includeBeta = els.chkBeta.checked;
-        state.releasesList = [];
-        state.selectedVersion = null;
-        hideReleasesList();
-        hideReleaseNotes();
-        refreshUI();
-
-        var betaProc = cockpit.spawn([DISPATCH_PATH, 'set-include-beta', state.includeBeta ? 'true' : 'false'], {
-          err: 'out'
-        });
-
-        betaProc.then(function () {
-          loadStatus();
-        });
-
-        betaProc.catch(function (ex) {
-          var msg = 'Could not save the beta setting.';
-          if (ex && ex.message) {
-            msg += ' ' + ex.message;
-          }
-          showStatus('error', msg);
-          loadStatus();
-        });
+        if (els.chkBeta.checked) {
+          els.chkBeta.checked = false;
+          showBetaModal();
+          return;
+        }
+        applyIncludeBeta(false);
       });
     }
 
