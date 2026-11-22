@@ -1,6 +1,10 @@
-/* Version: 0.28.5
+/* Version: 0.28.8
  * Purpose: Table tests for update panel action flags.
  * File: helper.update.status.test.js
+ *
+ * Changes in v0.28.8:
+ * - Delete label is Delete. deleteVisible and deleteTitle follow whether a kit is staged, including while busy.
+ * - primaryAction is install, download, or check, and stays the same while busy.
  *
  * Changes in v0.28.5:
  * - Blockers disable install and keep re-check and delete enabled.
@@ -96,7 +100,9 @@ test('an incompatible staged kit cannot be installed and can still be deleted', 
 
   assert.equal(result.installEnabled, false);
   assert.equal(result.deleteEnabled, true);
-  assert.equal(result.deleteLabel, 'Delete v0.24.4');
+  assert.equal(result.deleteVisible, true);
+  assert.equal(result.deleteLabel, 'Delete');
+  assert.equal(result.deleteTitle, 'Delete downloaded update v0.24.4');
 });
 
 test('a staged kit with nothing selected can be installed and cannot be downloaded', function () {
@@ -142,14 +148,18 @@ test('delete is enabled only for a staged kit that is not busy', function () {
     busy: false
   });
   assert.equal(ready.deleteEnabled, true);
-  assert.equal(ready.deleteLabel, 'Delete v0.24.4');
+  assert.equal(ready.deleteVisible, true);
+  assert.equal(ready.deleteLabel, 'Delete');
+  assert.equal(ready.deleteTitle, 'Delete downloaded update v0.24.4');
 
   var empty = actions({
     stagedVersion: '',
     busy: false
   });
   assert.equal(empty.deleteEnabled, false);
-  assert.equal(empty.deleteLabel, 'Delete download');
+  assert.equal(empty.deleteVisible, false);
+  assert.equal(empty.deleteLabel, 'Delete');
+  assert.equal(empty.deleteTitle, 'Delete download');
 
   var busy = actions({
     stagedVersion: '0.24.4',
@@ -159,7 +169,9 @@ test('delete is enabled only for a staged kit that is not busy', function () {
     busy: true
   });
   assert.equal(busy.deleteEnabled, false);
-  assert.equal(busy.deleteLabel, 'Delete v0.24.4');
+  assert.equal(busy.deleteVisible, true);
+  assert.equal(busy.deleteLabel, 'Delete');
+  assert.equal(busy.deleteTitle, 'Delete downloaded update v0.24.4');
   assert.equal(busy.installEnabled, false);
   assert.equal(busy.downloadEnabled, false);
   assert.equal(busy.checkEnabled, false);
@@ -195,6 +207,75 @@ test('precheck blockers disable install and keep recheck and delete enabled', fu
   assert.equal(result.installEnabled, false);
   assert.equal(result.recheckEnabled, true);
   assert.equal(result.deleteEnabled, true);
+});
+
+test('primaryAction is the next step and stays put while busy', function () {
+  assert.equal(actions({
+    hasList: false,
+    stagedVersion: '',
+    selectedVersion: ''
+  }).primaryAction, 'check');
+
+  assert.equal(actions({
+    stagedVersion: '',
+    selectedVersion: '0.24.4',
+    selectedCompatible: true
+  }).primaryAction, 'download');
+
+  assert.equal(actions({
+    stagedVersion: '0.24.4',
+    stagedCompatible: true,
+    selectedVersion: '0.24.3',
+    selectedCompatible: true
+  }).primaryAction, 'install');
+
+  assert.equal(actions({
+    stagedVersion: '0.24.4',
+    stagedCompatible: true,
+    precheckStatus: 'warnings'
+  }).primaryAction, 'install');
+
+  assert.equal(actions({
+    stagedVersion: '0.24.4',
+    stagedCompatible: true,
+    selectedVersion: '0.24.4',
+    selectedCompatible: true,
+    precheckStatus: 'blockers'
+  }).primaryAction, 'check');
+
+  assert.equal(actions({
+    stagedVersion: '0.24.4',
+    stagedCompatible: true,
+    selectedVersion: '',
+    precheckStatus: 'blockers'
+  }).primaryAction, 'check');
+
+  assert.equal(actions({
+    stagedVersion: '0.24.4',
+    stagedCompatible: true,
+    selectedVersion: '0.24.3',
+    selectedCompatible: true,
+    precheckStatus: 'blockers'
+  }).primaryAction, 'download');
+
+  assert.equal(actions({
+    stagedVersion: '0.24.4',
+    stagedCompatible: true,
+    busy: true
+  }).primaryAction, 'install');
+
+  assert.equal(actions({
+    stagedVersion: '',
+    selectedVersion: '0.24.4',
+    selectedCompatible: true,
+    busy: true
+  }).primaryAction, 'download');
+
+  assert.equal(actions({
+    stagedVersion: '',
+    selectedVersion: '',
+    busy: true
+  }).primaryAction, 'check');
 });
 
 test('precheck warnings keep install enabled and require acknowledgement', function () {

@@ -1,8 +1,12 @@
-/* Version: 0.28.6
+/* Version: 0.28.8
  * Purpose: Styles for the admin tools Cockpit package.
  * Two-panel layout: left navigation sidebar + right content area.
  * Includes dark theme support via .theme-dark class on <html>, synced from Cockpit shell.
  * Cockpit package; filename: admin.css
+ *
+ * Changes in v0.28.8:
+ * - Downloaded cell lays the staged version and compact Delete button in a row, including on narrow screens.
+ * - Removed the unused danger button rules. Start update uses the standard primary and secondary action styles.
  *
  * Changes in v0.28.6:
  * - Update output header actions (Copy output and Clear) sit in a row.
@@ -938,6 +942,20 @@ html.theme-dark .admin-dbtools-credentials {
   color: var(--pf-v5-global--Color--200, #6a6e73);
 }
 
+.update-downloaded-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.update-downloaded-row .update-btn-small {
+  padding: 2px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  width: auto;
+}
+
 /* ── Status badge ── */
 
 .update-badge {
@@ -1056,15 +1074,6 @@ html.theme-dark .update-compatibility-warning {
 
 .update-btn-secondary:hover:not(:disabled) {
   background: var(--pf-v5-global--BackgroundColor--200, #f0f0f0);
-}
-
-.update-btn-danger {
-  color: #ffffff;
-  background: #c9190b;
-}
-
-.update-btn-danger:hover:not(:disabled) {
-  background: #a30000;
 }
 
 .update-btn-small {
@@ -1856,6 +1865,9 @@ html.theme-dark .update-sudo-ack-label {
   .update-btn {
     width: 100%;
     justify-content: center;
+  }
+  .update-downloaded-row .update-btn-small {
+    width: auto;
   }
   .update-release-item {
     gap: 8px;

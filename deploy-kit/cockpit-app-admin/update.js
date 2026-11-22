@@ -1,12 +1,16 @@
-/* Version: 0.28.7
+/* Version: 0.28.8
  * Purpose: Main logic for the Cockpit updates panel.
  * Handles check for updates (list releases), download of the selected release, delete of the staged kit,
  * the pre-update instance check, and install of the staged kit (detached + polling).
  * Communicates with host scripts via update-dispatch.sh using cockpit.spawn().
- * Install, download, delete, and re-check flags come from updatePanelActions in helper.update.status.js.
+ * Install, download, delete, re-check, and primary-action flags come from updatePanelActions in helper.update.status.js.
  * State machine: IDLE | INSTALLING | FINISHED_SUCCESS | FINISHED_FAILED.
  * On init, calls update-progress first to reconnect to an in-progress update if any.
  * Cockpit package; filename: update.js
+ *
+ * Changes in v0.28.8:
+ * - refreshUI marks exactly one of Check, Download, and Start update as primary from primaryAction.
+ * - The delete button stays in the Downloaded cell, stays visible while a kit is staged (disabled when busy), and uses deleteLabel, deleteTitle, and aria-label.
  *
  * Changes in v0.28.7:
  * - When pre-update verification reports master-schema discrepancies, prints a clear warning in `#output` (and in the precheck summary) stating that upgrades are only supported for unmodified databases matching the standard master schema.
@@ -302,6 +306,13 @@
     }
   }
 
+  // Marks one action button as the primary next step and the others as secondary.
+  function setActionButtonVariant(btn, isPrimary) {
+    if (!btn) return;
+    btn.classList.toggle('update-btn-primary', isPrimary);
+    btn.classList.toggle('update-btn-secondary', !isPrimary);
+  }
+
   function refreshUI() {
     var d = state.updateData;
     var hasList = !!(state.releasesList && state.releasesList.length > 0);
@@ -371,12 +382,19 @@
       }
     }
 
+    setActionButtonVariant(els.btnCheck, actions.primaryAction === 'check');
+    setActionButtonVariant(els.btnDownload, actions.primaryAction === 'download');
+    setActionButtonVariant(els.btnInstall, actions.primaryAction === 'install');
+
     els.btnDownload.disabled = !actions.downloadEnabled;
     els.btnInstall.disabled = !actions.installEnabled;
     els.btnInstall.textContent = actions.installLabel;
     if (els.btnDeleteDownload) {
+      els.btnDeleteDownload.classList.toggle('hidden', !actions.deleteVisible);
       els.btnDeleteDownload.disabled = !actions.deleteEnabled;
       els.btnDeleteDownload.textContent = actions.deleteLabel;
+      els.btnDeleteDownload.title = actions.deleteTitle;
+      els.btnDeleteDownload.setAttribute('aria-label', actions.deleteTitle);
     }
 
     els.btnCheck.disabled = !actions.checkEnabled;

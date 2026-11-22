@@ -1,6 +1,6 @@
 {
   "name": "evi",
-  "version": "0.28.7-beta",
+  "version": "0.28.8-beta",
   "installRepo": "vk74/ready-room",
   "updateCompatibility": {
     "minVersion": "0.28.1"
@@ -13,5 +13,5 @@
   },
   "description": "evi application",
   "author": "evi team",
-  "license": "SEE LICENSE"
+  "license": "SEE LICENSE IN LICENSE"
 }

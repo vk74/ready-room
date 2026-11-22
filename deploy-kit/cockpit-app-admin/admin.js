@@ -1,9 +1,12 @@
-/* Version: 0.26.3
+/* Version: 0.28.8
  * Purpose: Main logic for application admin tools Cockpit package.
  * Handles navigation between sections, backup form interactions, and command execution
  * via Cockpit API (cockpit.spawn). Each admin function calls scripts through the
  * admin-dispatch.sh dispatcher that resolves paths to deployment scripts.
  * Cockpit package; filename: admin.js
+ *
+ * Changes in v0.28.8:
+ * - Panel version constant is v0.28.8.
  *
  * Changes in v0.26.3:
  * - Panel version constant is v0.26.3.
@@ -155,7 +158,7 @@
    * Panel version — single source of truth; rendered into the header on init
    * ===================================================================== */
 
-  var ADMIN_TOOLS_VERSION = 'v0.26.3';
+  var ADMIN_TOOLS_VERSION = 'v0.28.8';
 
   /* =====================================================================
    * DOM references (populated in init)

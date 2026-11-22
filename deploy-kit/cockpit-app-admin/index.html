@@ -1,9 +1,14 @@
 <!DOCTYPE html>
-<!-- Version: 0.28.7 -->
+<!-- Version: 0.28.8 -->
 <!-- Cockpit package: EVI administration panel with left navigation and right content area. -->
 <!-- Provides admin tools: disk status, container environment, full backup, password management, DB tools (pgAdmin), updates. -->
 <!-- Cockpit package; filename: index.html -->
 <!--
+  Changes in v0.28.8:
+  - Downloaded cell shows a compact Delete button next to the staged version.
+  - Action row is Check updates (primary while idle), Download update, and Start update (both secondary).
+  - Password Management section heading renamed to "Application admin password" (sidebar label unchanged).
+
   Changes in v0.28.7:
   - Added `#beta-modal` confirmation dialog warning that beta versions are not recommended for production installations.
 
@@ -432,7 +437,7 @@
 
         <!-- === Password Management Section === -->
         <div id="section-passwords" class="admin-section hidden">
-          <h2>Password Management</h2>
+          <h2>Application admin password</h2>
           <p class="admin-description">
             In emergency cases you can set a new password for built-in admin account. This will also restart state container to drop all session cookies.
           </p>
@@ -507,7 +512,12 @@
               </div>
               <div class="update-version-item">
                 <span class="update-version-label">Downloaded</span>
-                <span id="downloaded-version" class="update-version-value">—</span>
+                <div class="update-downloaded-row">
+                  <span id="downloaded-version" class="update-version-value">—</span>
+                  <button type="button" id="btn-delete-download" class="update-btn update-btn-small hidden" title="Delete download" aria-label="Delete download" disabled>
+                    Delete
+                  </button>
+                </div>
               </div>
               <div class="update-version-item">
                 <span class="update-version-label">Status</span>
@@ -566,18 +576,15 @@
             <div id="precheck-items-list" class="update-precheck-list hidden"></div>
           </div>
 
-          <!-- Single action row: Check / Download / Delete / Start update -->
+          <!-- Single action row: Check / Download / Start update. Primary style follows the next step. -->
           <div class="update-actions">
-            <button type="button" id="btn-check" class="update-btn update-btn-secondary">
+            <button type="button" id="btn-check" class="update-btn update-btn-primary">
               Check updates
             </button>
-            <button type="button" id="btn-download" class="update-btn update-btn-primary" disabled>
+            <button type="button" id="btn-download" class="update-btn update-btn-secondary" disabled>
               Download update
             </button>
-            <button type="button" id="btn-delete-download" class="update-btn update-btn-secondary" disabled>
-              Delete download
-            </button>
-            <button type="button" id="btn-install" class="update-btn update-btn-danger" disabled>
+            <button type="button" id="btn-install" class="update-btn update-btn-secondary" disabled>
               Start update
             </button>
           </div>
