@@ -1,7 +1,12 @@
-# Version: 0.26.2
+# Version: 0.28.9
 # Purpose: Podman Quadlet container unit for evi PostgreSQL database.
 # Deployment file: db.container
 # Logic: Runs DB on the internal network only (no host port published).
+#
+# Changes in v0.28.9:
+# - Use native Quadlet Health* directives with {{APP_POSTGRES_DB}} and a 30s interval.
+# - Add RestartSec=5s and CPUWeight=200 in [Service] to prioritize database scheduling under CPU contention.
+# - Move the memory limit into [Service] as MemoryMax=.
 #
 # Changes in v0.26.2:
 # - Pass APP_DB_PASSWORD, APP_ADMIN_DB_USERNAME, and APP_ADMIN_DB_PASSWORD into the db container.
@@ -66,17 +71,20 @@ Environment=APP_ADMIN_DB_PASSWORD={{APP_ADMIN_DB_PASSWORD}}
 Environment=SEED_DEMO_DATA={{APP_SEED_DEMO_DATA}}
 
 # Healthcheck - use explicit postgres user to avoid "role root does not exist" errors
-PodmanArgs=--health-cmd="pg_isready -U postgres -d maindb"
-PodmanArgs=--health-interval=10s
-PodmanArgs=--health-timeout=5s
-PodmanArgs=--health-retries=10
-
-# Resource limits (optional)
-{{APP_PODMANARGS_LIMITS_DB}}
+HealthCmd=pg_isready -U postgres -d {{APP_POSTGRES_DB}}
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=5
+HealthStartPeriod=60s
 
 [Service]
 Restart=always
+RestartSec=5s
+CPUWeight=200
 TimeoutStartSec=180
+
+# Resource limits (optional)
+{{APP_PODMANARGS_LIMITS_DB}}
 
 [Install]
 WantedBy=default.target

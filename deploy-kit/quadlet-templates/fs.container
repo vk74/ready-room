@@ -1,4 +1,4 @@
-# Version: 0.26.2
+# Version: 0.28.9
 # Purpose: Podman Quadlet container unit for fs store (SeaweedFS object storage / file storage).
 # Deployment file: fs.container
 # Logic: Runs SeaweedFS single-node (master+volume+filer+S3 gateway) on internal network only.
@@ -6,7 +6,14 @@
 #        S3 credentials loaded from Podman secret (JSON config mounted at /run/secrets/{{APP_FS_SECRET_NAME}}).
 #        Volume files limited to 1 GB each (-master.volumeSizeLimitMB=1024) to avoid 30 GB preallocation.
 #        Up to {{APP_FS_VOLUME_MAX}} volume files per server (-volume.max); LevelDB index reduces memory vs in-memory.
+#        -volume.preStopSeconds=1 and StopTimeout=30 flush LevelDB volume indexes before the stop timeout.
 #        Exec passes only subcommand args (no "weed" prefix): entrypoint.sh adds /usr/bin/weed automatically.
+#
+# Changes in v0.28.9:
+# - Add -volume.preStopSeconds=1 and StopTimeout=30 so SeaweedFS flushes LevelDB volume indexes cleanly before stop timeout instead of receiving SIGKILL after 10s.
+# - Add native Quadlet HealthCmd (30s interval) checking Master topology, Filer /healthz, and S3 /healthz on 127.0.0.1.
+# - Add RestartSec=5s and CPUWeight=50 in [Service] so background storage work yields CPU to db and be under contention.
+# - Move the memory limit into [Service] as MemoryMax=.
 #
 # Changes in v0.26.2:
 # - Rename EVI_* configuration keys and template placeholders to APP_* (EVI_APP_DB_PASSWORD becomes APP_DB_PASSWORD).
@@ -94,14 +101,24 @@ Environment=FS_SECRET_KEY={{APP_FS_SECRET_KEY}}
 # SeaweedFS single-node: master + volume server + filer + S3 gateway in one process
 # Entrypoint /entrypoint.sh matches on first arg "server" and calls: exec /usr/bin/weed server ...
 # Do NOT prefix with "weed" — that causes "weed: unknown subcommand 'weed'" crash.
-Exec=server -filer -s3 -s3.port={{APP_FS_S3_PORT}} -s3.config=/run/secrets/{{APP_FS_SECRET_NAME}} -master.volumeSizeLimitMB=1024 -volume.index=leveldb -volume.max={{APP_FS_VOLUME_MAX}}
+Exec=server -filer -s3 -s3.port={{APP_FS_S3_PORT}} -s3.config=/run/secrets/{{APP_FS_SECRET_NAME}} -master.volumeSizeLimitMB=1024 -volume.index=leveldb -volume.max={{APP_FS_VOLUME_MAX}} -volume.preStopSeconds=1
+StopTimeout=30
 
-# Resource limits (optional)
-{{APP_PODMANARGS_LIMITS_FS}}
+# Healthcheck - verify Master topology (includes Volume Server registration), Filer, and S3 gateway
+HealthCmd=/bin/sh -c "wget -qO- -T 4 http://127.0.0.1:9333/dir/status | grep -q Topology && wget -qO /dev/null -T 4 http://127.0.0.1:8888/healthz && wget -qO /dev/null -T 4 http://127.0.0.1:{{APP_FS_S3_PORT}}/healthz"
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=45s
 
 [Service]
 Restart=always
+RestartSec=5s
+CPUWeight=50
 TimeoutStartSec=180
+
+# Resource limits (optional)
+{{APP_PODMANARGS_LIMITS_FS}}
 
 [Install]
 WantedBy=default.target

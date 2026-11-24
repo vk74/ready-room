@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 #
-# Version: 0.27.5
+# Version: 0.28.9
 # Purpose: Full uninstall of application: containers, volumes, secrets, images, state, config, quadlets, cockpit panels, UFW rules, sysctl, apt packages.
 # File: uninstall.sh
 # Backend script, called from install.sh (option 5) or evi-reconfigure.sh. Can be run standalone.
 # Logic: Single confirmation (type 'yes'), stop services, remove podman resources, remove dirs (config/ with sudo for pgadmin data), quadlets, systemd reload,
 #        then sudo block: cockpit panels, UFW rules by number for ports 80/443/9090/5445, sysctl, apt remove. Prints instruction to run rm -rf ~/evi.
+#
+# Changes in v0.28.9:
+# - APP_FS_DATA_PATH=system does not remove a bind directory for the file-storage volume.
 #
 # Changes in v0.27.5:
 # - Remove state_data volume, current short-named quadlet files ({db,be,fe,state,worker,fs,reverse-proxy,pgadmin}.container, {db,fs,state}.volume, network.network), and ghcr.io/vk74/{fe,be,db,worker} + valkey images during uninstall.
@@ -246,6 +249,7 @@ main() {
     valkey_name="${APP_VALKEY_SECRET_NAME:-${valkey_name}}"
     db_data_path="${APP_DATA_PATH:-}"
     fs_data_path="${APP_FS_DATA_PATH:-${db_data_path}}"
+    [[ "${fs_data_path}" == "system" ]] && fs_data_path=""
   fi
 
   log "removing podman secrets..."

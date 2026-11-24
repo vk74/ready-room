@@ -1,9 +1,16 @@
 <!DOCTYPE html>
-<!-- Version: 0.28.8 -->
+<!-- Version: 0.28.9 -->
 <!-- Cockpit package: EVI administration panel with left navigation and right content area. -->
-<!-- Provides admin tools: disk status, container environment, full backup, password management, DB tools (pgAdmin), updates. -->
+<!-- Provides admin tools: storage management, container environment, full backup, password management, DB tools (pgAdmin), updates. -->
 <!-- Cockpit package; filename: index.html -->
 <!--
+  Changes in v0.28.9:
+  - Storage Management shows one chart per mounted disk, volume placement, the file-storage ceiling, and space cleanup.
+  - Sidebar label and section heading are Storage Management. The section id stays disk-status.
+  - helper.disk.status.js loads before admin.js.
+  - Confirm storage changes dialog sits outside the scrolling content area.
+  - Resource limits show memory as a percentage of host RAM. CPU scheduling priority is managed automatically via systemd CPUWeight.
+
   Changes in v0.28.8:
   - Downloaded cell shows a compact Delete button next to the staged version.
   - Action row is Check updates (primary while idle), Download update, and Start update (both secondary).
@@ -136,7 +143,7 @@
         <ul class="admin-nav-list">
           <li class="admin-nav-item active" data-section="disk-status">
             <span class="admin-nav-icon">&#128190;</span>
-            <span class="admin-nav-label">Disk Status</span>
+            <span class="admin-nav-label">Storage Management</span>
           </li>
           <li class="admin-nav-item" data-section="container-env">
             <span class="admin-nav-icon">&#9881;</span>
@@ -162,12 +169,12 @@
       </nav>
 
       <main class="admin-content">
-        <!-- === Disk Status === -->
+        <!-- === Storage Management === -->
         <div id="section-disk-status" class="admin-section">
-          <h2>Disk Status</h2>
+          <h2>Storage Management</h2>
           <p class="admin-description">
-            Disk usage for the system and data volumes. Warnings appear when usage exceeds 85%.
-            Critical alerts appear above 95%.
+            Mounted disks, where database, state, and file storage volumes live, and space that can be reclaimed.
+            Warnings appear when a disk is at least 85% full. Critical alerts appear at 95%.
           </p>
 
           <div id="disk-critical-banner" class="admin-disk-banner admin-disk-banner-critical hidden">
@@ -176,15 +183,90 @@
           <div id="disk-warning-banner" class="admin-disk-banner admin-disk-banner-warning hidden">
             <strong>Warning:</strong> Disk space is running low. Consider freeing up space or expanding the disk.
           </div>
+          <div id="disk-ceiling-banner" class="admin-disk-banner admin-disk-banner-warning hidden">
+            <strong>Warning:</strong> The file storage capacity ceiling exceeds the disk that hosts file storage.
+          </div>
+
+          <div class="admin-disk-toolbar">
+            <button type="button" id="btn-disk-refresh" class="admin-btn admin-btn-secondary">Refresh</button>
+            <div id="disk-status-msg" class="admin-status hidden"></div>
+          </div>
 
           <div id="disk-cards" class="admin-disk-cards">
             <!-- Populated by JS -->
           </div>
 
-          <div class="admin-form-actions" style="margin-top: 16px;">
-            <button type="button" id="btn-disk-refresh" class="admin-btn admin-btn-secondary">Refresh</button>
+          <h3 class="admin-section-group-title">Volume placement &amp; storage limits</h3>
+          <p class="admin-hint">
+            Move application volumes (<code>db_data</code>, <code>state_data</code>, <code>fs_data</code>) between mounted disks
+            or adjust the file storage capacity ceiling (<code>APP_FS_VOLUME_MAX_GB</code>).
+            Moving a volume stops services, copies volume data, and restarts containers.
+          </p>
+
+          <div class="admin-form-group">
+            <label for="disk-select-db-mount">Database &amp; state volumes (APP_DATA_PATH)</label>
+            <select id="disk-select-db-mount" class="admin-select"></select>
           </div>
-          <div id="disk-status-msg" class="admin-status hidden"></div>
+
+          <div class="admin-form-group">
+            <label for="disk-select-fs-mount">File storage volume (APP_FS_DATA_PATH)</label>
+            <select id="disk-select-fs-mount" class="admin-select"></select>
+          </div>
+
+          <div class="admin-form-group">
+            <label for="disk-input-fs-max-gb">File storage capacity ceiling, GB (APP_FS_VOLUME_MAX_GB)</label>
+            <input type="number" id="disk-input-fs-max-gb" class="admin-input" min="1" step="1">
+            <span id="disk-fs-max-hint" class="admin-hint"></span>
+          </div>
+
+          <div class="admin-form-actions">
+            <button type="button" id="btn-disk-storage-apply" class="admin-btn admin-btn-primary">Apply Storage Changes</button>
+          </div>
+
+          <h3 class="admin-section-group-title">Space cleanup</h3>
+          <p class="admin-hint">
+            Safely reclaim disk space by pruning unused container images, clearing staged update downloads,
+            or deleting old backup archives.
+          </p>
+
+          <div id="disk-cleanup-panel" class="admin-disk-cleanup-card">
+            <div class="admin-disk-cleanup-row">
+              <div class="admin-disk-cleanup-copy">
+                <div class="admin-disk-cleanup-title">Unused container images</div>
+                <div id="disk-cleanup-images-info" class="admin-disk-cleanup-info">No unused images</div>
+              </div>
+              <button type="button" id="btn-disk-prune-images" class="admin-btn admin-btn-secondary" disabled>Prune unused images</button>
+            </div>
+            <div class="admin-disk-cleanup-row">
+              <div class="admin-disk-cleanup-copy">
+                <div class="admin-disk-cleanup-title">Staged update files</div>
+                <div id="disk-cleanup-updates-info" class="admin-disk-cleanup-info">No staged update files</div>
+              </div>
+              <button type="button" id="btn-disk-clear-updates" class="admin-btn admin-btn-secondary" disabled>Clear staged updates</button>
+            </div>
+            <div class="admin-disk-cleanup-row">
+              <div class="admin-disk-cleanup-copy">
+                <div class="admin-disk-cleanup-title">Backup archives (config/backup/)</div>
+                <div id="disk-cleanup-backups-summary" class="admin-disk-cleanup-info">No backup archives</div>
+                <div id="disk-cleanup-backups-list" class="admin-disk-backups-list"></div>
+              </div>
+            </div>
+          </div>
+
+          <div id="disk-op-progress" class="admin-progress-wrapper hidden">
+            <div class="admin-progress-bar">
+              <div id="disk-op-progress-fill" class="admin-progress-fill admin-progress-indeterminate"></div>
+            </div>
+            <div id="disk-op-progress-text" class="admin-progress-text">Working…</div>
+          </div>
+
+          <div id="disk-op-output-wrapper" class="admin-output-wrapper hidden">
+            <div class="admin-output-header">
+              <h3>Output</h3>
+              <button type="button" id="btn-disk-output-clear" class="admin-btn admin-btn-small">Clear</button>
+            </div>
+            <pre id="disk-op-output" class="admin-output"></pre>
+          </div>
         </div>
 
         <!-- === Container Environment === -->
@@ -273,47 +355,39 @@
             </div>
 
             <h3 class="admin-section-group-title">Resource limits (per container)</h3>
-            <p class="admin-hint admin-limits-intro">CPU and memory limits passed to Podman. Requires Apply &amp; Restart.</p>
+            <p class="admin-hint admin-limits-intro">Memory limits as a percentage of host RAM. CPU scheduling priority is managed automatically via systemd CPUWeight. Requires Apply &amp; Restart.</p>
 
             <div class="admin-limits-grid" id="env-limits-grid">
               <div class="admin-limits-row admin-limits-header">
                 <span>Container</span>
-                <span>CPU</span>
                 <span>Memory</span>
               </div>
               <div class="admin-limits-row" data-limit-prefix="PROXY">
                 <span class="admin-limits-name">Reverse proxy (Caddy)</span>
-                <select id="env-limit-cpu-proxy" class="admin-select admin-select-inline" aria-label="CPU limit proxy"></select>
                 <select id="env-limit-mem-proxy" class="admin-select admin-select-inline" aria-label="Memory limit proxy"></select>
               </div>
               <div class="admin-limits-row" data-limit-prefix="FE">
                 <span class="admin-limits-name">Frontend</span>
-                <select id="env-limit-cpu-fe" class="admin-select admin-select-inline" aria-label="CPU limit fe"></select>
                 <select id="env-limit-mem-fe" class="admin-select admin-select-inline" aria-label="Memory limit fe"></select>
               </div>
               <div class="admin-limits-row" data-limit-prefix="BE">
                 <span class="admin-limits-name">Backend</span>
-                <select id="env-limit-cpu-be" class="admin-select admin-select-inline" aria-label="CPU limit be"></select>
                 <select id="env-limit-mem-be" class="admin-select admin-select-inline" aria-label="Memory limit be"></select>
               </div>
               <div class="admin-limits-row" data-limit-prefix="DB">
                 <span class="admin-limits-name">Database</span>
-                <select id="env-limit-cpu-db" class="admin-select admin-select-inline" aria-label="CPU limit db"></select>
                 <select id="env-limit-mem-db" class="admin-select admin-select-inline" aria-label="Memory limit db"></select>
               </div>
               <div class="admin-limits-row" data-limit-prefix="STATE">
                 <span class="admin-limits-name">State (Valkey)</span>
-                <select id="env-limit-cpu-state" class="admin-select admin-select-inline" aria-label="CPU limit state"></select>
                 <select id="env-limit-mem-state" class="admin-select admin-select-inline" aria-label="Memory limit state"></select>
               </div>
               <div class="admin-limits-row" data-limit-prefix="WORKER">
                 <span class="admin-limits-name">Worker</span>
-                <select id="env-limit-cpu-worker" class="admin-select admin-select-inline" aria-label="CPU limit worker"></select>
                 <select id="env-limit-mem-worker" class="admin-select admin-select-inline" aria-label="Memory limit worker"></select>
               </div>
               <div class="admin-limits-row" data-limit-prefix="FS">
                 <span class="admin-limits-name">File Storage (SeaweedFS)</span>
-                <select id="env-limit-cpu-fs" class="admin-select admin-select-inline" aria-label="CPU limit fs"></select>
                 <select id="env-limit-mem-fs" class="admin-select admin-select-inline" aria-label="Memory limit fs"></select>
               </div>
             </div>
@@ -616,6 +690,22 @@
       </main>
     </div>
 
+    <!-- Storage confirmation (outside scrollable main — position:fixed must not be clipped) -->
+    <div id="disk-storage-modal" class="admin-modal hidden" aria-hidden="true">
+      <div class="admin-modal-backdrop"></div>
+      <div class="admin-modal-box" role="dialog" aria-labelledby="disk-storage-modal-title">
+        <h3 id="disk-storage-modal-title" class="admin-modal-title">Confirm storage changes</h3>
+        <p id="disk-storage-modal-lead" class="admin-modal-lead">
+          Applying volume changes will stop application containers, copy volume data if a volume is moving to another disk, update <code>config/app.env</code>, and restart services.
+        </p>
+        <pre id="disk-storage-diff-body" class="admin-diff-body"></pre>
+        <div class="admin-modal-actions">
+          <button type="button" id="btn-disk-storage-cancel" class="admin-btn admin-btn-secondary">Cancel</button>
+          <button type="button" id="btn-disk-storage-confirm" class="admin-btn admin-btn-primary">Confirm &amp; Apply</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Update modals (outside scrollable main — position:fixed must not be clipped) -->
     <div id="sudo-modal" class="update-sudo-modal hidden">
       <div class="update-sudo-backdrop"></div>
@@ -664,6 +754,7 @@
   </div>
 
   <script src="../base1/cockpit.js"></script>
+  <script src="helper.disk.status.js"></script>
   <script src="admin.js"></script>
   <script src="helper.update.status.js"></script>
   <script src="update.js"></script>

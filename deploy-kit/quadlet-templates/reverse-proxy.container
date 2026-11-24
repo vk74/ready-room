@@ -1,7 +1,10 @@
-# Version: 0.26.2
+# Version: 0.28.9
 # Purpose: Podman Quadlet container unit for evi reverse proxy (Caddy).
 # Deployment file: reverse-proxy.container
 # Logic: Terminates TLS on host 80/443 and routes / -> fe, /api -> be.
+#
+# Changes in v0.28.9:
+# - Move the memory limit into [Service] as MemoryMax=.
 #
 # Changes in v0.26.2:
 # - Rename EVI_* configuration keys and template placeholders to APP_* (EVI_APP_DB_PASSWORD becomes APP_DB_PASSWORD).
@@ -71,12 +74,12 @@ Volume=caddy_config:/config:Z
 # Optional: manual TLS cert/key mounted as read-only files when enabled by install.sh (deploy)
 {{APP_PROXY_TLS_MOUNTS}}
 
-# Resource limits (optional)
-{{APP_PODMANARGS_LIMITS_PROXY}}
-
 [Service]
 Restart=always
 TimeoutStartSec=180
+
+# Resource limits (optional)
+{{APP_PODMANARGS_LIMITS_PROXY}}
 
 [Install]
 WantedBy=default.target

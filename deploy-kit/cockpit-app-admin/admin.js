@@ -1,12 +1,15 @@
-/* Version: 0.28.8
+/* Version: 0.28.9
  * Purpose: Main logic for application admin tools Cockpit package.
  * Handles navigation between sections, backup form interactions, and command execution
  * via Cockpit API (cockpit.spawn). Each admin function calls scripts through the
  * admin-dispatch.sh dispatcher that resolves paths to deployment scripts.
  * Cockpit package; filename: admin.js
  *
- * Changes in v0.28.8:
- * - Panel version constant is v0.28.8.
+ * Changes in v0.28.9:
+ * - Panel version constant is v0.28.9.
+ * - Disk Status renders one donut card per mounted disk, storage placement controls, and space cleanup actions.
+ * - Container memory limits use a 10%–80% scale. CPU limit controls are removed.
+ * - State memory that is empty or a legacy size (256m, 512m, 1g, 2g, 4g, 8g) displays as 10% without a spurious diff.
  *
  * Changes in v0.26.3:
  * - Panel version constant is v0.26.3.
@@ -158,7 +161,7 @@
    * Panel version — single source of truth; rendered into the header on init
    * ===================================================================== */
 
-  var ADMIN_TOOLS_VERSION = 'v0.28.8';
+  var ADMIN_TOOLS_VERSION = 'v0.28.9';
 
   /* =====================================================================
    * DOM references (populated in init)
@@ -180,20 +183,22 @@
     envSnapshot: null,
     configDir: '',
     certPemContent: null,
-    keyPemContent: null
+    keyPemContent: null,
+    diskOpRunning: false,
+    diskStatusInfo: null,
+    pendingStorageDiff: null
   };
 
-  var CPU_LIMIT_VALUES = ['0.25', '0.5', '1', '2', '4'];
-  var MEM_LIMIT_VALUES = ['256m', '512m', '1g', '2g', '4g', '8g'];
+  var MEM_LIMIT_VALUES = ['10%', '20%', '30%', '40%', '50%', '60%', '70%', '80%'];
 
   var LIMIT_ROWS = [
-    { idSuf: 'proxy', keyCpu: 'APP_LIMIT_CPU_PROXY', keyMem: 'APP_LIMIT_MEM_PROXY' },
-    { idSuf: 'fe', keyCpu: 'APP_LIMIT_CPU_FE', keyMem: 'APP_LIMIT_MEM_FE' },
-    { idSuf: 'be', keyCpu: 'APP_LIMIT_CPU_BE', keyMem: 'APP_LIMIT_MEM_BE' },
-    { idSuf: 'db', keyCpu: 'APP_LIMIT_CPU_DB', keyMem: 'APP_LIMIT_MEM_DB' },
-    { idSuf: 'state', keyCpu: 'APP_LIMIT_CPU_STATE', keyMem: 'APP_LIMIT_MEM_STATE' },
-    { idSuf: 'worker', keyCpu: 'APP_LIMIT_CPU_WORKER', keyMem: 'APP_LIMIT_MEM_WORKER' },
-    { idSuf: 'fs', keyCpu: 'APP_LIMIT_CPU_FS', keyMem: 'APP_LIMIT_MEM_FS' }
+    { idSuf: 'proxy', keyMem: 'APP_LIMIT_MEM_PROXY' },
+    { idSuf: 'fe', keyMem: 'APP_LIMIT_MEM_FE' },
+    { idSuf: 'be', keyMem: 'APP_LIMIT_MEM_BE' },
+    { idSuf: 'db', keyMem: 'APP_LIMIT_MEM_DB' },
+    { idSuf: 'state', keyMem: 'APP_LIMIT_MEM_STATE' },
+    { idSuf: 'worker', keyMem: 'APP_LIMIT_MEM_WORKER' },
+    { idSuf: 'fs', keyMem: 'APP_LIMIT_MEM_FS' }
   ];
 
   /* =====================================================================
@@ -922,10 +927,15 @@
 
     for (var r = 0; r < LIMIT_ROWS.length; r++) {
       var row = LIMIT_ROWS[r];
-      var sc = document.getElementById('env-limit-cpu-' + row.idSuf);
       var sm = document.getElementById('env-limit-mem-' + row.idSuf);
-      if (sc) setLimitSelectValue(sc, env[row.keyCpu] || '');
-      if (sm) setLimitSelectValue(sm, env[row.keyMem] || '');
+      var memVal = env[row.keyMem] == null ? '' : String(env[row.keyMem]).trim();
+      if (row.keyMem === 'APP_LIMIT_MEM_STATE' &&
+          (memVal === '' || memVal === '256m' || memVal === '512m' ||
+           memVal === '1g' || memVal === '2g' || memVal === '4g' || memVal === '8g')) {
+        memVal = '10%';
+        env[row.keyMem] = '10%';
+      }
+      if (sm) setLimitSelectValue(sm, memVal);
     }
 
     updateTlsDependentUi();
@@ -947,9 +957,7 @@
 
     for (var r = 0; r < LIMIT_ROWS.length; r++) {
       var row = LIMIT_ROWS[r];
-      var sc = document.getElementById('env-limit-cpu-' + row.idSuf);
       var sm = document.getElementById('env-limit-mem-' + row.idSuf);
-      o[row.keyCpu] = sc ? sc.value.trim() : '';
       o[row.keyMem] = sm ? sm.value.trim() : '';
     }
     return o;
@@ -961,7 +969,7 @@
       'APP_FIREWALL_ADMIN_ACCESS', 'APP_FIREWALL_ADMIN_ALLOWED'
     ];
     for (var i = 0; i < LIMIT_ROWS.length; i++) {
-      keys.push(LIMIT_ROWS[i].keyCpu, LIMIT_ROWS[i].keyMem);
+      keys.push(LIMIT_ROWS[i].keyMem);
     }
     var lines = [];
     for (var j = 0; j < keys.length; j++) {
@@ -1086,7 +1094,7 @@
       'APP_FIREWALL_ADMIN_ACCESS', 'APP_FIREWALL_ADMIN_ALLOWED'
     ];
     for (var i = 0; i < LIMIT_ROWS.length; i++) {
-      keys.push(LIMIT_ROWS[i].keyCpu, LIMIT_ROWS[i].keyMem);
+      keys.push(LIMIT_ROWS[i].keyMem);
     }
     for (var j = 0; j < keys.length; j++) {
       var k = keys[j];
@@ -1235,9 +1243,7 @@
 
     for (var r = 0; r < LIMIT_ROWS.length; r++) {
       var row = LIMIT_ROWS[r];
-      var sc = document.getElementById('env-limit-cpu-' + row.idSuf);
       var sm = document.getElementById('env-limit-mem-' + row.idSuf);
-      if (sc) buildLimitSelectOptions(sc, CPU_LIMIT_VALUES);
       if (sm) buildLimitSelectOptions(sm, MEM_LIMIT_VALUES);
     }
 
@@ -1292,88 +1298,781 @@
    * Disk Status section
    * ===================================================================== */
 
-  function loadDiskStatus() {
-    var cardsEl = document.getElementById('disk-cards');
-    var critBanner = document.getElementById('disk-critical-banner');
-    var warnBanner = document.getElementById('disk-warning-banner');
-    var statusMsg = document.getElementById('disk-status-msg');
-    if (!cardsEl) return;
+  var DONUT_CIRCUMFERENCE = 2 * Math.PI * 52;
+  var DISK_ROLE_ORDER = ['system', 'db', 'fs', 'state', 'backups'];
+  var DISK_ROLE_LABELS = {
+    system: 'System',
+    db: 'Database',
+    fs: 'File storage',
+    state: 'State',
+    backups: 'Backups'
+  };
+  var DISK_SEG_CLASSES = {
+    'disk-seg-db': true,
+    'disk-seg-fs': true,
+    'disk-seg-state': true,
+    'disk-seg-images': true,
+    'disk-seg-backups': true,
+    'disk-seg-updates': true,
+    'disk-seg-other': true,
+    'disk-seg-free': true
+  };
 
-    if (statusMsg) {
-      statusMsg.textContent = 'Loading disk status…';
-      statusMsg.className = 'admin-status status-running';
-      statusMsg.classList.remove('hidden');
+  function diskHelpersReady() {
+    return typeof normalizeDiskList === 'function' &&
+      typeof buildDonutSegments === 'function' &&
+      typeof deriveDiskAlerts === 'function' &&
+      typeof computeStorageDiff === 'function';
+  }
+
+  function setDiskStatus(type, message) {
+    var statusMsg = document.getElementById('disk-status-msg');
+    if (!statusMsg) return;
+    statusMsg.textContent = message;
+    statusMsg.className = 'admin-status status-' + type;
+  }
+
+  function loadDiskStatus(options) {
+    var keepStatus = !!(options && options.keepStatus);
+    var cardsEl = document.getElementById('disk-cards');
+    if (!cardsEl) return;
+    if (state.diskOpRunning && !keepStatus) return;
+    if (!diskHelpersReady()) {
+      setDiskStatus('error', 'Disk status helpers did not load.');
+      return;
+    }
+    if (!keepStatus) {
+      setDiskStatus('running', 'Loading disk status…');
     }
 
     var proc = cockpit.spawn([DISPATCH_PATH, 'disk-status'], { err: 'out' });
     proc.then(function (data) {
-      if (statusMsg) statusMsg.classList.add('hidden');
       var info;
       try {
         info = JSON.parse(data);
       } catch (e) {
-        if (statusMsg) {
-          statusMsg.textContent = 'Could not parse disk status.';
-          statusMsg.className = 'admin-status status-error';
-          statusMsg.classList.remove('hidden');
-        }
+        setDiskStatus('error', 'Could not parse disk status.');
         return;
       }
+      state.diskStatusInfo = info;
+      renderDiskBanners(info);
       renderDiskCards(cardsEl, info);
-      if (critBanner) critBanner.classList.toggle('hidden', !info.system_critical && !info.data_critical);
-      if (warnBanner) {
-        var anyWarn = false;
-        if (info.system && info.system.use_percent >= 85 && info.system.use_percent < 95) anyWarn = true;
-        if (info.data && info.data.use_percent >= 85 && info.data.use_percent < 95) anyWarn = true;
-        warnBanner.classList.toggle('hidden', !anyWarn || info.system_critical || info.data_critical);
+      populateDiskStorageForm(info);
+      renderDiskCleanupPanel(info);
+      if (!keepStatus) {
+        var statusMsg = document.getElementById('disk-status-msg');
+        if (statusMsg && statusMsg.className.indexOf('status-running') !== -1) {
+          statusMsg.classList.add('hidden');
+        }
       }
     });
     proc.catch(function (ex) {
-      if (statusMsg) {
-        statusMsg.textContent = 'Failed to load disk status: ' + (ex.message || 'unknown error');
-        statusMsg.className = 'admin-status status-error';
-        statusMsg.classList.remove('hidden');
-      }
+      setDiskStatus('error', 'Failed to load disk status: ' + ((ex && ex.message) || 'unknown error'));
     });
+    return proc;
+  }
+
+  function setBanner(el, show, label, message) {
+    var strong;
+    if (!el) return;
+    if (!show) {
+      el.classList.add('hidden');
+      return;
+    }
+    el.classList.remove('hidden');
+    el.textContent = '';
+    strong = document.createElement('strong');
+    strong.textContent = label;
+    el.appendChild(strong);
+    el.appendChild(document.createTextNode(' ' + message));
+  }
+
+  function joinMounts(mounts) {
+    var parts = [];
+    var i;
+    for (i = 0; i < mounts.length; i++) {
+      if (mounts[i]) parts.push(mounts[i]);
+    }
+    if (parts.length === 0) return '';
+    if (parts.length === 1) return parts[0];
+    if (parts.length === 2) return parts[0] + ' and ' + parts[1];
+    return parts.slice(0, -1).join(', ') + ', and ' + parts[parts.length - 1];
+  }
+
+  function renderDiskBanners(info) {
+    var alerts = deriveDiskAlerts(info);
+    var disks = normalizeDiskList(info);
+    var multi = disks.length > 1;
+    var critMsg = 'Disk space is critically low. Free up space immediately to prevent service interruption.';
+    var warnMsg = 'Disk space is running low. Consider freeing up space or expanding the disk.';
+    if (multi && alerts.criticalDisks.length > 0) {
+      critMsg = 'Disk space is critically low on ' + joinMounts(alerts.criticalDisks) + '. Free up space immediately to prevent service interruption.';
+    }
+    if (multi && alerts.warningDisks.length > 0) {
+      warnMsg = 'Disk space is running low on ' + joinMounts(alerts.warningDisks) + '. Consider freeing up space or expanding the disk.';
+    }
+    setBanner(
+      document.getElementById('disk-critical-banner'),
+      alerts.critical,
+      'Critical:',
+      critMsg
+    );
+    setBanner(
+      document.getElementById('disk-warning-banner'),
+      alerts.warning,
+      'Warning:',
+      warnMsg
+    );
+    setBanner(
+      document.getElementById('disk-ceiling-banner'),
+      alerts.fsCeilingWarning,
+      'Warning:',
+      alerts.fsCeilingMessage || 'The file storage capacity ceiling exceeds the disk that hosts file storage.'
+    );
   }
 
   function renderDiskCards(container, info) {
-    container.innerHTML = '';
-    if (info.system) {
-      container.appendChild(buildDiskCard('System disk', '/', info.system));
+    var disks = normalizeDiskList(info);
+    var i;
+    var empty;
+    container.textContent = '';
+    if (!disks.length) {
+      empty = document.createElement('p');
+      empty.className = 'admin-hint';
+      empty.textContent = 'No mounted disks reported.';
+      container.appendChild(empty);
+      return;
     }
-    if (info.data) {
-      container.appendChild(buildDiskCard('Data disk', info.data.path, info.data));
+    for (i = 0; i < disks.length; i++) {
+      container.appendChild(buildDiskCard(disks[i]));
     }
   }
 
-  function buildDiskCard(title, path, disk) {
+  function roleListHas(roles, key) {
+    var i;
+    if (!roles) return false;
+    for (i = 0; i < roles.length; i++) {
+      if (roles[i] === key) return true;
+    }
+    return false;
+  }
+
+  function diskRoleBadges(roles) {
+    var html = '';
+    var i;
+    var key;
+    var any = false;
+    for (i = 0; i < DISK_ROLE_ORDER.length; i++) {
+      key = DISK_ROLE_ORDER[i];
+      if (!roleListHas(roles, key)) continue;
+      any = true;
+      html += '<span class="admin-disk-role-badge">' + escapeHtml(DISK_ROLE_LABELS[key]) + '</span>';
+    }
+    if (!any) {
+      html = '<span class="admin-disk-role-badge admin-disk-role-badge-available">Available mount</span>';
+    }
+    return html;
+  }
+
+  function diskSubtitle(disk) {
+    var mount = disk.mount_point || '/';
+    var device = disk.device || '';
+    var fstype = disk.fstype || '';
+    var detail = '';
+    if (device && fstype && fstype !== 'unknown') detail = device + ' (' + fstype + ')';
+    else if (device) detail = device;
+    else if (fstype && fstype !== 'unknown') detail = fstype;
+    if (!detail) return mount;
+    return mount + ' \u2014 ' + detail;
+  }
+
+  function formatUsePercent(pct) {
+    var n = Number(pct);
+    var rounded;
+    if (typeof n !== 'number' || !isFinite(n)) n = 0;
+    rounded = Math.round(n * 10) / 10;
+    if (Math.abs(rounded - Math.round(rounded)) < 1e-9) return String(Math.round(rounded));
+    return rounded.toFixed(1);
+  }
+
+  function formatShare(item) {
+    var bytes = Number(item && item.bytes) || 0;
+    var pct = Number(item && item.pct);
+    if (!isFinite(pct)) pct = 0;
+    if (bytes > 0 && pct < 0.1) return '<0.1%';
+    if (pct === 0) return '0%';
+    return pct.toFixed(1) + '%';
+  }
+
+  function safeSegClass(colorClass) {
+    if (DISK_SEG_CLASSES[colorClass]) return colorClass;
+    return '';
+  }
+
+  function isSafeDash(value) {
+    return typeof value === 'string' && /^[\d.\- ]+$/.test(value);
+  }
+
+  function donutArcsHtml(arcs) {
+    var html = '';
+    var i;
+    var arc;
+    if (!arcs) return html;
+    for (i = 0; i < arcs.length; i++) {
+      arc = arcs[i];
+      if (!arc || arc.key === 'free') continue;
+      if (!isSafeDash(arc.dashArray) || !isSafeDash(arc.dashOffset)) continue;
+      html += '<circle class="admin-donut-seg ' + safeSegClass(arc.colorClass) + '" cx="70" cy="70" r="52"' +
+        ' stroke-dasharray="' + arc.dashArray + '" stroke-dashoffset="' + arc.dashOffset + '"></circle>';
+    }
+    return html;
+  }
+
+  function donutLegendHtml(legend) {
+    var html = '';
+    var i;
+    var item;
+    if (!legend) return html;
+    for (i = 0; i < legend.length; i++) {
+      item = legend[i];
+      html += '<div class="admin-disk-legend-row">' +
+        '<span class="admin-disk-swatch ' + safeSegClass(item.colorClass) + '"></span>' +
+        '<span class="admin-disk-legend-label">' + escapeHtml(item.label || '') + '</span>' +
+        '<span class="admin-disk-legend-bytes">' + escapeHtml(formatBytes(item.bytes || 0)) + '</span>' +
+        '<span class="admin-disk-legend-pct">' + escapeHtml(formatShare(item)) + '</span>' +
+        '</div>';
+    }
+    return html;
+  }
+
+  function buildDiskCard(disk) {
     var card = document.createElement('div');
-    card.className = 'admin-disk-card';
-
-    var pct = disk.use_percent || 0;
-    var barClass = 'admin-disk-bar-fill';
-    if (pct >= 95) barClass += ' disk-crit';
-    else if (pct >= 85) barClass += ' disk-warn';
-
-    var totalStr = formatBytes(disk.total_bytes || 0);
+    var donut = buildDonutSegments(disk, DONUT_CIRCUMFERENCE);
+    var title = disk.is_system ? 'System disk' : ('Mounted disk: ' + (disk.mount_point || ''));
+    var levelClass = '';
     var usedStr = formatBytes(disk.used_bytes || 0);
     var availStr = formatBytes(disk.avail_bytes || 0);
-
+    var totalStr = formatBytes(disk.total_bytes || 0);
+    if (donut.level === 'critical') levelClass = ' admin-disk-card-critical';
+    else if (donut.level === 'warning') levelClass = ' admin-disk-card-warning';
+    card.className = 'admin-disk-card' + levelClass;
     card.innerHTML =
-      '<h4 class="admin-disk-card-title">' + escapeHtml(title) + '</h4>' +
-      '<p class="admin-disk-card-path">' + escapeHtml(path) + '</p>' +
-      '<div class="admin-disk-bar-wrapper">' +
-        '<div class="admin-disk-bar-track">' +
-          '<div class="' + barClass + '" style="width:' + Math.min(pct, 100) + '%"></div>' +
-        '</div>' +
-        '<span class="admin-disk-bar-pct">' + pct + '%</span>' +
+      '<div class="admin-disk-card-head">' +
+        '<h4 class="admin-disk-card-title">' + escapeHtml(title) + '</h4>' +
+        '<p class="admin-disk-card-path">' + escapeHtml(diskSubtitle(disk)) + '</p>' +
       '</div>' +
-      '<div class="admin-disk-details">' +
-        totalStr + ' total &middot; ' + usedStr + ' used &middot; ' + availStr + ' free' +
+      '<div class="admin-disk-roles">' + diskRoleBadges(disk.roles) + '</div>' +
+      '<div class="admin-disk-card-body">' +
+        '<div class="admin-disk-donut-col">' +
+          '<div class="admin-donut-wrap">' +
+            '<svg class="admin-donut" width="140" height="140" viewBox="0 0 140 140" aria-hidden="true">' +
+              '<circle class="admin-donut-track" cx="70" cy="70" r="52"></circle>' +
+              '<g transform="rotate(-90 70 70)">' + donutArcsHtml(donut.arcs) + '</g>' +
+            '</svg>' +
+            '<div class="admin-donut-center">' +
+              '<span class="admin-donut-pct status-level-' + escapeHtml(donut.level || 'ok') + '">' +
+                escapeHtml(formatUsePercent(donut.usePercent)) + '%</span>' +
+              '<span class="admin-donut-sub">used</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="admin-disk-totals">' + escapeHtml(usedStr) + ' used &middot; ' +
+            escapeHtml(availStr) + ' free &middot; ' + escapeHtml(totalStr) + ' total</div>' +
+        '</div>' +
+        '<div class="admin-disk-legend-col">' +
+          '<div class="admin-disk-legend">' + donutLegendHtml(donut.legend) + '</div>' +
+        '</div>' +
       '</div>';
-
     return card;
+  }
+
+  function uniquePush(list, value) {
+    var i;
+    if (value == null || value === '') return;
+    for (i = 0; i < list.length; i++) {
+      if (list[i] === value) return;
+    }
+    list.push(value);
+  }
+
+  function stripSlash(value) {
+    var s = String(value == null ? '' : value).trim();
+    while (s.length > 1 && s.charAt(s.length - 1) === '/') s = s.slice(0, -1);
+    return s;
+  }
+
+  function mountFromStoredPath(path) {
+    var p = stripSlash(path);
+    var parent;
+    var slash;
+    if (p === '' || p === '/' || p === 'system') return '/';
+    if (p.length >= 5 && p.substring(p.length - 5) === '/data') {
+      parent = p.substring(0, p.length - 5);
+      return parent === '' ? '/' : parent;
+    }
+    slash = p.lastIndexOf('/');
+    if (slash <= 0) return '/';
+    return p.substring(0, slash);
+  }
+
+  function fsChoiceFromStoredPath(path) {
+    var raw = stripSlash(path);
+    if (raw === '' || raw === 'same') return 'same';
+    if (raw === 'system' || raw === '/') return '/';
+    return mountFromStoredPath(raw);
+  }
+
+  function placementMatches(cfg, dataMount, fsMount, gb) {
+    var diff = computeStorageDiff(cfg, {
+      dataTargetMount: dataMount,
+      fsTargetMount: fsMount,
+      fsVolumeMaxGb: gb
+    });
+    return !diff.relocatesDbState && !diff.relocatesFs && !diff.changesFsLimit;
+  }
+
+  function storageCeilingGb(cfg) {
+    var n = Number(cfg && cfg.fs_volume_max_gb);
+    if (typeof n !== 'number' || !isFinite(n)) return '';
+    return String(Math.round(n));
+  }
+
+  function writableExtraMounts(disks) {
+    var out = [];
+    var i;
+    var mount;
+    for (i = 0; i < disks.length; i++) {
+      if (!disks[i] || !disks[i].writable || disks[i].is_system) continue;
+      mount = disks[i].mount_point || '';
+      if (!mount || mount === '/') continue;
+      uniquePush(out, mount);
+    }
+    out.sort(function (a, b) {
+      if (a < b) return -1;
+      if (a > b) return 1;
+      return 0;
+    });
+    return out;
+  }
+
+  function choosePlacement(cfg, extraMounts) {
+    var gbText = storageCeilingGb(cfg);
+    var gb = gbText === '' ? '' : Number(gbText);
+    var dbCandidates = [];
+    var fsCandidates = [];
+    var i;
+    var j;
+    var dbMount;
+    var fsMount;
+    uniquePush(dbCandidates, mountFromStoredPath(cfg.app_data_path));
+    if (cfg.effective_db_mount != null && String(cfg.effective_db_mount).trim() !== '') {
+      uniquePush(dbCandidates, mountFromStoredPath(cfg.effective_db_mount));
+    }
+    uniquePush(dbCandidates, '/');
+    for (i = 0; i < extraMounts.length; i++) uniquePush(dbCandidates, extraMounts[i]);
+
+    uniquePush(fsCandidates, fsChoiceFromStoredPath(cfg.app_fs_data_path));
+    uniquePush(fsCandidates, 'same');
+    uniquePush(fsCandidates, '/');
+    for (i = 0; i < extraMounts.length; i++) uniquePush(fsCandidates, extraMounts[i]);
+
+    if (gb !== '') {
+      for (i = 0; i < dbCandidates.length; i++) {
+        for (j = 0; j < fsCandidates.length; j++) {
+          if (placementMatches(cfg, dbCandidates[i], fsCandidates[j], gb)) {
+            return { db: dbCandidates[i], fs: fsCandidates[j] };
+          }
+        }
+      }
+    }
+
+    dbMount = mountFromStoredPath(cfg.app_data_path);
+    if (cfg.effective_db_mount != null && String(cfg.effective_db_mount).trim() !== '') {
+      dbMount = mountFromStoredPath(cfg.effective_db_mount);
+    }
+    fsMount = fsChoiceFromStoredPath(cfg.app_fs_data_path);
+    return { db: dbMount, fs: fsMount };
+  }
+
+  function fillSelect(select, options, selected) {
+    var i;
+    var opt;
+    var found = false;
+    select.textContent = '';
+    for (i = 0; i < options.length; i++) {
+      opt = document.createElement('option');
+      opt.value = options[i].value;
+      opt.textContent = options[i].label;
+      if (options[i].value === selected) found = true;
+      select.appendChild(opt);
+    }
+    if (!found && selected) {
+      opt = document.createElement('option');
+      opt.value = selected;
+      opt.textContent = selected;
+      select.appendChild(opt);
+    }
+    select.value = selected;
+  }
+
+  function selectedFsMountPoint() {
+    var fs = document.getElementById('disk-select-fs-mount');
+    var db = document.getElementById('disk-select-db-mount');
+    var fsVal = fs ? fs.value : 'same';
+    var dbVal = db && db.value ? db.value : '/';
+    if (fsVal === 'same' || fsVal === '') return dbVal || '/';
+    return fsVal;
+  }
+
+  function updateFsCapacityHint() {
+    var hint = document.getElementById('disk-fs-max-hint');
+    var mount;
+    var disks;
+    var i;
+    var found = null;
+    if (!hint) return;
+    mount = selectedFsMountPoint();
+    disks = normalizeDiskList(state.diskStatusInfo || {});
+    for (i = 0; i < disks.length; i++) {
+      if (disks[i].mount_point === mount) {
+        found = disks[i];
+        break;
+      }
+    }
+    if (!found) {
+      hint.textContent = 'No size data for ' + mount + '.';
+      return;
+    }
+    hint.textContent = formatBytes(found.avail_bytes || 0) + ' free of ' +
+      formatBytes(found.total_bytes || 0) + ' on ' + mount + '.';
+  }
+
+  function populateDiskStorageForm(info) {
+    var cfg = (info && info.storage_config) || {};
+    var disks = normalizeDiskList(info);
+    var extra = writableExtraMounts(disks);
+    var chosen = choosePlacement(cfg, extra);
+    var dbSelect = document.getElementById('disk-select-db-mount');
+    var fsSelect = document.getElementById('disk-select-fs-mount');
+    var gbInput = document.getElementById('disk-input-fs-max-gb');
+    var dbOptions = [{ value: '/', label: 'System disk (/) \u2014 default' }];
+    var fsOptions = [
+      { value: 'same', label: 'Same disk as database (follow APP_DATA_PATH)' },
+      { value: '/', label: 'System disk (/)' }
+    ];
+    var i;
+    for (i = 0; i < extra.length; i++) {
+      dbOptions.push({ value: extra[i], label: extra[i] });
+      fsOptions.push({ value: extra[i], label: extra[i] });
+    }
+    if (dbSelect) fillSelect(dbSelect, dbOptions, chosen.db);
+    if (fsSelect) fillSelect(fsSelect, fsOptions, chosen.fs);
+    if (gbInput) gbInput.value = storageCeilingGb(cfg);
+    updateFsCapacityHint();
+  }
+
+  function formatStagedLabel(version) {
+    var v = String(version);
+    if (v.charAt(0) === 'v' || v.charAt(0) === 'V') return v;
+    return 'v' + v;
+  }
+
+  function formatBackupWhen(mtime) {
+    var d;
+    var iso;
+    if (mtime == null || mtime === '') return '';
+    d = new Date(mtime);
+    if (isNaN(d.getTime())) return String(mtime);
+    iso = d.toISOString();
+    return iso.substring(0, 16).replace('T', ' ') + ' UTC';
+  }
+
+  function renderBackupList(backups) {
+    var list = document.getElementById('disk-cleanup-backups-list');
+    var i;
+    var item;
+    var row;
+    var nameEl;
+    var sizeEl;
+    var dateEl;
+    var btn;
+    if (!list) return;
+    list.textContent = '';
+    if (!backups || !backups.length) return;
+    for (i = 0; i < backups.length; i++) {
+      item = backups[i] || {};
+      row = document.createElement('div');
+      row.className = 'admin-disk-backup-row';
+      nameEl = document.createElement('span');
+      nameEl.className = 'admin-disk-backup-name';
+      nameEl.textContent = item.name || '';
+      sizeEl = document.createElement('span');
+      sizeEl.className = 'admin-disk-backup-size';
+      sizeEl.textContent = formatBytes(item.size_bytes || 0);
+      dateEl = document.createElement('span');
+      dateEl.className = 'admin-disk-backup-date';
+      dateEl.textContent = formatBackupWhen(item.mtime);
+      btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'admin-btn admin-btn-small';
+      btn.textContent = 'Delete';
+      btn.setAttribute('data-backup-name', item.name || '');
+      btn.disabled = !!state.diskOpRunning || !item.name;
+      row.appendChild(nameEl);
+      row.appendChild(sizeEl);
+      row.appendChild(dateEl);
+      row.appendChild(btn);
+      list.appendChild(row);
+    }
+  }
+
+  function renderDiskCleanupPanel(info) {
+    var cleanup = (info && info.cleanup) || {};
+    var count = Number(cleanup.unused_images_count) || 0;
+    var imageBytes = Number(cleanup.unused_images_bytes) || 0;
+    var stagedBytes = Number(cleanup.staged_updates_bytes) || 0;
+    var stagedVersion = cleanup.staged_version;
+    var backupBytes = Number(cleanup.backups_bytes) || 0;
+    var backups = Array.isArray(cleanup.backups) ? cleanup.backups : [];
+    var imagesEl = document.getElementById('disk-cleanup-images-info');
+    var updatesEl = document.getElementById('disk-cleanup-updates-info');
+    var summaryEl = document.getElementById('disk-cleanup-backups-summary');
+    if (imagesEl) {
+      if (count === 0) imagesEl.textContent = 'No unused images';
+      else imagesEl.textContent = count + ' unused image' + (count === 1 ? '' : 's') + ' (' + formatBytes(imageBytes) + ')';
+    }
+    if (updatesEl) {
+      if (stagedBytes === 0 && !stagedVersion) updatesEl.textContent = 'No staged update files';
+      else if (stagedVersion) updatesEl.textContent = formatStagedLabel(stagedVersion) + ' (' + formatBytes(stagedBytes) + ')';
+      else updatesEl.textContent = formatBytes(stagedBytes);
+    }
+    if (summaryEl) {
+      if (backupBytes === 0 && backups.length === 0) summaryEl.textContent = 'No backup archives';
+      else summaryEl.textContent = formatBytes(backupBytes) + ' total';
+    }
+    renderBackupList(backups);
+    syncDiskActionButtons();
+  }
+
+  function syncDiskActionButtons() {
+    var info = state.diskStatusInfo || {};
+    var cleanup = info.cleanup || {};
+    var busy = !!state.diskOpRunning;
+    var count = Number(cleanup.unused_images_count) || 0;
+    var stagedBytes = Number(cleanup.staged_updates_bytes) || 0;
+    var stagedVersion = cleanup.staged_version;
+    var prune = document.getElementById('btn-disk-prune-images');
+    var clearUp = document.getElementById('btn-disk-clear-updates');
+    var apply = document.getElementById('btn-disk-storage-apply');
+    var refresh = document.getElementById('btn-disk-refresh');
+    var deletes;
+    var i;
+    if (prune) prune.disabled = busy || count === 0;
+    if (clearUp) clearUp.disabled = busy || (stagedBytes === 0 && !stagedVersion);
+    if (apply) apply.disabled = busy;
+    if (refresh) refresh.disabled = busy;
+    deletes = document.querySelectorAll('#disk-cleanup-backups-list button');
+    for (i = 0; i < deletes.length; i++) deletes[i].disabled = busy || !deletes[i].getAttribute('data-backup-name');
+  }
+
+  function appendDiskOpOutput(text) {
+    var out = document.getElementById('disk-op-output');
+    if (!out || text == null) return;
+    out.textContent += text;
+    out.scrollTop = out.scrollHeight;
+  }
+
+  function beginDiskOp(message) {
+    var progress = document.getElementById('disk-op-progress');
+    var fill = document.getElementById('disk-op-progress-fill');
+    var text = document.getElementById('disk-op-progress-text');
+    var wrap = document.getElementById('disk-op-output-wrapper');
+    var out = document.getElementById('disk-op-output');
+    state.diskOpRunning = true;
+    if (progress) progress.classList.remove('hidden');
+    if (fill) fill.classList.add('admin-progress-indeterminate');
+    if (text) text.textContent = message;
+    if (wrap) wrap.classList.remove('hidden');
+    if (out) out.textContent = '';
+    setDiskStatus('running', message);
+    syncDiskActionButtons();
+  }
+
+  function finishDiskOp(ok, message) {
+    var progress = document.getElementById('disk-op-progress');
+    state.diskOpRunning = false;
+    state.pendingStorageDiff = null;
+    if (progress) progress.classList.add('hidden');
+    setDiskStatus(ok ? 'success' : 'error', message);
+    syncDiskActionButtons();
+    loadDiskStatus({ keepStatus: true });
+  }
+
+  function watchDiskOp(proc, successMessage, failureLead) {
+    if (proc.stream) {
+      proc.stream(function (data) {
+        appendDiskOpOutput(data);
+      });
+    }
+    proc.then(function () {
+      finishDiskOp(true, successMessage);
+    });
+    proc.catch(function (ex) {
+      var msg = failureLead;
+      if (ex && ex.exit_status) msg += ' Exit code: ' + ex.exit_status + '.';
+      if (ex && ex.message) msg += ' ' + ex.message;
+      finishDiskOp(false, msg);
+    });
+  }
+
+  function cleanupSuccessMessage(action) {
+    if (action === 'prune-images') return 'Unused images pruned.';
+    if (action === 'clear-updates') return 'Staged update files cleared.';
+    return 'Backup archive deleted.';
+  }
+
+  function cleanupFailureLead(action) {
+    if (action === 'prune-images') return 'Prune unused images failed.';
+    if (action === 'clear-updates') return 'Clear staged updates failed.';
+    return 'Delete backup failed.';
+  }
+
+  function cleanupRunningMessage(action) {
+    if (action === 'prune-images') return 'Pruning unused images…';
+    if (action === 'clear-updates') return 'Clearing staged updates…';
+    return 'Deleting backup archive…';
+  }
+
+  function runDiskCleanup(action, arg) {
+    var args;
+    var proc;
+    if (state.diskOpRunning) return;
+    if (action === 'delete-backup' && !arg) return;
+    args = [DISPATCH_PATH, 'disk-cleanup', action];
+    if (action === 'delete-backup') args.push(arg);
+    beginDiskOp(cleanupRunningMessage(action));
+    proc = cockpit.spawn(args, { err: 'out' });
+    watchDiskOp(proc, cleanupSuccessMessage(action), cleanupFailureLead(action));
+  }
+
+  function readStorageForm() {
+    var db = document.getElementById('disk-select-db-mount');
+    var fs = document.getElementById('disk-select-fs-mount');
+    var gb = document.getElementById('disk-input-fs-max-gb');
+    return {
+      dataTargetMount: db ? db.value : '/',
+      fsTargetMount: fs ? fs.value : 'same',
+      fsVolumeMaxGb: gb ? String(gb.value).trim() : ''
+    };
+  }
+
+  function openDiskStorageModal() {
+    var modal = document.getElementById('disk-storage-modal');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    modal.setAttribute('aria-hidden', 'false');
+  }
+
+  function closeDiskStorageModal() {
+    var modal = document.getElementById('disk-storage-modal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+
+  function onApplyDiskStorageClick() {
+    var form;
+    var gb;
+    var diff;
+    var body;
+    if (state.diskOpRunning) return;
+    if (!state.diskStatusInfo) {
+      setDiskStatus('error', 'Disk status is not loaded yet.');
+      return;
+    }
+    if (!diskHelpersReady()) {
+      setDiskStatus('error', 'Disk status helpers did not load.');
+      return;
+    }
+    form = readStorageForm();
+    gb = Number(form.fsVolumeMaxGb);
+    if (!/^[0-9]+$/.test(form.fsVolumeMaxGb) || !isFinite(gb) || gb < 1) {
+      setDiskStatus('error', 'File storage capacity ceiling must be a whole number of gigabytes, at least 1.');
+      return;
+    }
+    form.fsVolumeMaxGb = gb;
+    diff = computeStorageDiff(state.diskStatusInfo.storage_config || {}, form);
+    if (!diff.hasChanges) {
+      setDiskStatus('error', 'No storage changes to apply.');
+      return;
+    }
+    state.pendingStorageDiff = diff;
+    body = document.getElementById('disk-storage-diff-body');
+    if (body) body.textContent = (diff.summaryLines || []).join('\n');
+    openDiskStorageModal();
+  }
+
+  function runDiskStorageApplyConfirmed() {
+    var diff = state.pendingStorageDiff;
+    closeDiskStorageModal();
+    if (!diff || state.diskOpRunning) return;
+    beginDiskOp('Applying storage changes…');
+    var proc = cockpit.spawn([DISPATCH_PATH, 'disk-storage-apply'], {
+      environ: [
+        'APP_NEW_DATA_PATH=' + diff.newAppDataPath,
+        'APP_NEW_FS_DATA_PATH=' + diff.newAppFsDataPath,
+        'APP_NEW_FS_VOLUME_MAX_GB=' + String(diff.newFsVolumeMaxGb)
+      ],
+      err: 'out'
+    });
+    watchDiskOp(proc, 'Storage changes applied.', 'Storage changes failed.');
+  }
+
+  function clearDiskOpOutput() {
+    var out = document.getElementById('disk-op-output');
+    if (out) out.textContent = '';
+  }
+
+  function onDeleteBackupClick(e) {
+    var node = e.target;
+    var name;
+    while (node && node.id !== 'disk-cleanup-backups-list') {
+      if (node.getAttribute && node.tagName === 'BUTTON' && node.getAttribute('data-backup-name') != null) {
+        if (node.disabled || state.diskOpRunning) return;
+        name = node.getAttribute('data-backup-name');
+        if (name) runDiskCleanup('delete-backup', name);
+        return;
+      }
+      node = node.parentNode;
+    }
+  }
+
+  function initDiskStatus() {
+    var refresh = document.getElementById('btn-disk-refresh');
+    var db = document.getElementById('disk-select-db-mount');
+    var fs = document.getElementById('disk-select-fs-mount');
+    var apply = document.getElementById('btn-disk-storage-apply');
+    var prune = document.getElementById('btn-disk-prune-images');
+    var clearUp = document.getElementById('btn-disk-clear-updates');
+    var list = document.getElementById('disk-cleanup-backups-list');
+    var clearOut = document.getElementById('btn-disk-output-clear');
+    var cancel = document.getElementById('btn-disk-storage-cancel');
+    var confirmBtn = document.getElementById('btn-disk-storage-confirm');
+    var modal = document.getElementById('disk-storage-modal');
+    var backdrop;
+    if (refresh) refresh.addEventListener('click', function () { loadDiskStatus(); });
+    if (db) db.addEventListener('change', updateFsCapacityHint);
+    if (fs) fs.addEventListener('change', updateFsCapacityHint);
+    if (apply) apply.addEventListener('click', onApplyDiskStorageClick);
+    if (prune) prune.addEventListener('click', function () { runDiskCleanup('prune-images'); });
+    if (clearUp) clearUp.addEventListener('click', function () { runDiskCleanup('clear-updates'); });
+    if (list) list.addEventListener('click', onDeleteBackupClick);
+    if (clearOut) clearOut.addEventListener('click', clearDiskOpOutput);
+    if (cancel) cancel.addEventListener('click', closeDiskStorageModal);
+    if (confirmBtn) confirmBtn.addEventListener('click', runDiskStorageApplyConfirmed);
+    if (modal) {
+      backdrop = modal.querySelector('.admin-modal-backdrop');
+      if (backdrop) backdrop.addEventListener('click', closeDiskStorageModal);
+    }
   }
 
   function escapeHtml(str) {
@@ -1488,10 +2187,7 @@
     initContainerEnvSection();
     loadDefaults();
 
-    var btnDiskRefresh = document.getElementById('btn-disk-refresh');
-    if (btnDiskRefresh) {
-      btnDiskRefresh.addEventListener('click', loadDiskStatus);
-    }
+    initDiskStatus();
     loadDiskStatus();
 
     var versionEl = document.getElementById('admin-version');

@@ -1,8 +1,11 @@
-# Version: 0.27.2
+# Version: 0.28.9
 # Purpose: Podman Quadlet container unit for worker (Go background job processor).
 # Deployment file: worker.container
 # Logic: Runs on internal network only. Connects to db, fs, and state (Valkey).
 #        Starts after DB, Valkey, and fs store are available.
+#
+# Changes in v0.28.9:
+# - Move the memory limit into [Service] as MemoryMax=. Add RestartSec=5s and CPUWeight=50.
 #
 # Changes in v0.27.2:
 # - Pass APP_INSTALL_REPO into the worker container.
@@ -92,12 +95,14 @@ Environment=FS_BUCKET={{APP_FS_BUCKET}}
 Environment=FS_ACCESS_KEY={{APP_FS_ACCESS_KEY}}
 Environment=FS_SECRET_KEY={{APP_FS_SECRET_KEY}}
 
-# Resource limits (optional)
-{{APP_PODMANARGS_LIMITS_WORKER}}
-
 [Service]
 Restart=always
+RestartSec=5s
+CPUWeight=50
 TimeoutStartSec=180
+
+# Resource limits (optional)
+{{APP_PODMANARGS_LIMITS_WORKER}}
 
 [Install]
 WantedBy=default.target

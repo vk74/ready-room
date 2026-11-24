@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# Version: 0.28.6
+# Version: 0.28.9
 # Purpose: Shared template rendering functions for application deploy and update processes.
 # Deployment file: render-templates.sh
 # Logic: Sourced by install.sh and apply-update.sh. Provides functions to render quadlet templates,
-#        Caddyfile, compute resource limit blocks, apply the evi-state RAM profile, and render valkey.conf.
+#        Caddyfile, compute MemoryMax blocks, apply the state memory percentage, and render valkey.conf.
 #        All APP_* env vars must be loaded before calling.
 #
 # Required variables before source (contract):
@@ -14,6 +14,12 @@
 #   APP_QUADLET_DIR — path to ~/.config/containers/systemd/
 #   APP_STATE_DIR   — path to config/state/ directory
 #   TLS_DIR         — path to config/tls/ directory
+#
+# Changes in v0.28.9:
+# - APP_FS_DATA_PATH=system renders the file-storage volume as the default named volume, even when APP_DATA_PATH is an external disk.
+# - State memory is a percentage of host RAM (default 10%). Valkey maxmemory is half of that container limit, minimum 50mb. Legacy sizes 256m, 512m, 1g, 2g, 4g, and 8g are treated as 10%.
+# - Container limit blocks emit systemd MemoryMax= and ignore CPU limit arguments.
+# - Quadlet rendering substitutes APP_LIMIT_MEM_STATE and defaults an empty value to 10%.
 #
 # Changes in v0.28.6:
 # - Host RAM GiB adds 0.75 GiB before flooring so a 4 GB VM that reports about 3.3–3.9 GiB counts as 4.
@@ -127,79 +133,54 @@ deploy_check_host_mem() {
   return 0
 }
 
-# Prints test|compact|medium|large|xlarge from host_gib (stdout only).
-# May be called with host_gib 0/1 in tests; the hard-stop is deploy_check_host_mem, not pick.
-deploy_pick_state_profile() {
-  local host_gib
-  host_gib="$(deploy_host_mem_gib)"
-  if [[ "${host_gib}" -lt 4 ]]; then
-    printf '%s\n' "test"
-  elif [[ "${host_gib}" -lt 8 ]]; then
-    printf '%s\n' "compact"
-  elif [[ "${host_gib}" -lt 16 ]]; then
-    printf '%s\n' "medium"
-  elif [[ "${host_gib}" -lt 32 ]]; then
-    printf '%s\n' "large"
-  else
-    printf '%s\n' "xlarge"
+# Host RAM in KiB. APP_HOST_MEM_GIB, when set, is converted exactly (no 0.75 GiB
+# tolerance — that adjustment belongs to deploy_host_mem_gib). Missing or
+# unreadable MemTotal falls back to 4 GiB (4194304 KiB).
+deploy_host_mem_kb() {
+  if [[ -n "${APP_HOST_MEM_GIB:-}" ]]; then
+    printf '%s\n' "$((APP_HOST_MEM_GIB * 1024 * 1024))"
+    return 0
   fi
+  local mem_kb
+  mem_kb="$(awk '/^MemTotal:/ { print $2; exit }' /proc/meminfo 2>/dev/null || true)"
+  if [[ -z "${mem_kb}" || ! "${mem_kb}" =~ ^[0-9]+$ ]]; then
+    mem_kb=4194304
+  fi
+  printf '%s\n' "${mem_kb}"
 }
 
-# Reverse-map a persisted container limit to a profile name.
-# 256m→test, 512m→compact, 1g→medium, 2g→large, 4g→xlarge; else deploy_pick_state_profile.
-deploy_state_profile_name_for_limit() {
-  case "${1:-}" in
-    256m) printf '%s\n' "test" ;;
-    512m) printf '%s\n' "compact" ;;
-    1g)   printf '%s\n' "medium" ;;
-    2g)   printf '%s\n' "large" ;;
-    4g)   printf '%s\n' "xlarge" ;;
-    *)    deploy_pick_state_profile ;;
-  esac
-}
-
-# test→256m, compact→512m, medium→1g, large→2g, xlarge→4g, unknown→256m.
-deploy_state_container_limit_for_profile() {
-  case "${1:-}" in
-    test)    printf '%s\n' "256m" ;;
-    compact) printf '%s\n' "512m" ;;
-    medium)  printf '%s\n' "1g" ;;
-    large)   printf '%s\n' "2g" ;;
-    xlarge)  printf '%s\n' "4g" ;;
-    *)       printf '%s\n' "256m" ;;
-  esac
-}
-
-# Derive Valkey maxmemory from the current container limit (not stored in evi.env).
-# empty / 256m → 50mb (no warn). Unknown non-empty → 50mb + WARN mentioning APP_LIMIT_MEM_STATE.
+# Valkey maxmemory is 50% of the container memory limit, minimum 50mb.
+# Empty and legacy ladder sizes (256m|512m|1g|2g|4g|8g) are treated as 10%.
+# A percentage argument uses host RAM. Any other string warns and returns 50mb.
 deploy_state_maxmemory_for_limit() {
-  local limit="${1:-}"
+  local limit="${1:-10%}"
+  local pct mem_kb limit_mb maxmem_mb
   case "${limit}" in
-    "")    printf '%s\n' "50mb" ;;
-    256m)  printf '%s\n' "50mb" ;;
-    512m)  printf '%s\n' "200mb" ;;
-    1g)    printf '%s\n' "400mb" ;;
-    2g)    printf '%s\n' "800mb" ;;
-    4g)    printf '%s\n' "1600mb" ;;
-    8g)    printf '%s\n' "4g" ;;
-    *)
-      printf 'WARN: unknown APP_LIMIT_MEM_STATE=%s; using maxmemory 50mb\n' "${limit}" >&2
-      printf '%s\n' "50mb"
+    ""|256m|512m|1g|2g|4g|8g) limit="10%" ;;
+  esac
+  if [[ "${limit}" =~ ^([0-9]+)%$ ]]; then
+    pct="${BASH_REMATCH[1]}"
+    mem_kb="$(deploy_host_mem_kb)"
+    limit_mb=$((mem_kb * pct / 100 / 1024))
+    maxmem_mb=$((limit_mb / 2))
+    [[ "${maxmem_mb}" -lt 50 ]] && maxmem_mb=50
+    printf '%s\n' "${maxmem_mb}mb"
+    return 0
+  fi
+  printf 'WARN: unknown APP_LIMIT_MEM_STATE=%s; using maxmemory 50mb\n' "${limit}" >&2
+  printf '%s\n' "50mb"
+}
+
+# Empty or a legacy ladder size becomes 10% (return 0). Any other value is left
+# unchanged (return 1).
+deploy_apply_state_memory_profile() {
+  case "${APP_LIMIT_MEM_STATE:-}" in
+    ""|256m|512m|1g|2g|4g|8g)
+      export APP_LIMIT_MEM_STATE="10%"
+      return 0
       ;;
   esac
-}
-
-# If APP_LIMIT_MEM_STATE is already set: do not overwrite, return 1.
-# If it is empty: pick a profile, export APP_LIMIT_MEM_STATE, return 0.
-deploy_apply_state_memory_profile() {
-  if [[ -n "${APP_LIMIT_MEM_STATE:-}" ]]; then
-    return 1
-  fi
-  local profile limit
-  profile="$(deploy_pick_state_profile)"
-  limit="$(deploy_state_container_limit_for_profile "${profile}")"
-  export APP_LIMIT_MEM_STATE="${limit}"
-  return 0
+  return 1
 }
 
 # Idempotent APP_LIMIT_MEM_STATE= write.
@@ -269,11 +250,30 @@ deploy_render_valkey_conf() {
   printf '%s\n' "${content}" > "${dst}"
 }
 
+# MemoryMax= for [Service]. Accepts one argument (memory) or the legacy
+# two-argument form (cpu, memory); the CPU argument is ignored.
+# Empty → no output. N% → MemoryMax=N%. Byte sizes (512m, 1g, 2G, 512mb) →
+# MemoryMax= with the unit letter uppercased (K, M, G, T). Other strings → no output.
 deploy_compute_limits_block() {
-  local cpu="$1" mem="$2" out=""
-  [[ -n "${cpu}" ]] && out+=$'PodmanArgs=--cpus='"${cpu}"$'\n'
-  [[ -n "${mem}" ]] && out+=$'PodmanArgs=--memory='"${mem}"$'\n'
-  printf "%s" "${out}"
+  local mem unit_upper num unit
+  if [[ $# -ge 2 ]]; then
+    mem="$2"
+  else
+    mem="${1:-}"
+  fi
+  if [[ -z "${mem}" ]]; then
+    return 0
+  fi
+  if [[ "${mem}" =~ ^([0-9]+)%$ ]]; then
+    printf 'MemoryMax=%s\n' "${mem}"
+    return 0
+  fi
+  if [[ "${mem}" =~ ^([0-9]+)([kKmMgGtT])[bB]?$ ]]; then
+    num="${BASH_REMATCH[1]}"
+    unit="${BASH_REMATCH[2]}"
+    unit_upper="$(printf '%s' "${unit}" | tr '[:lower:]' '[:upper:]')"
+    printf 'MemoryMax=%s%s\n' "${num}" "${unit_upper}"
+  fi
 }
 
 deploy_prepare_proxy_tls_mounts() {
@@ -301,6 +301,7 @@ deploy_render_template_file() {
     APP_STATE_DIR APP_JWT_SECRET_NAME APP_VALKEY_PASSWORD
     APP_PGADMIN_IMAGE APP_PGADMIN_HOST APP_PGADMIN_PORT APP_PGADMIN_EMAIL
     APP_DATA_PATH APP_FS_DATA_PATH APP_FS_VOLUME_MAX_GB APP_FS_VOLUME_MAX
+    APP_LIMIT_MEM_STATE
   )
   for k in "${keys[@]}"; do
     v="${!k-}"
@@ -356,6 +357,7 @@ deploy_render_caddyfile() {
 }
 
 deploy_render_quadlets() {
+  export APP_LIMIT_MEM_STATE="${APP_LIMIT_MEM_STATE:-10%}"
   export APP_PODMANARGS_LIMITS_PROXY
   export APP_PODMANARGS_LIMITS_FE
   export APP_PODMANARGS_LIMITS_BE
@@ -363,13 +365,13 @@ deploy_render_quadlets() {
   export APP_PODMANARGS_LIMITS_STATE
   export APP_PODMANARGS_LIMITS_WORKER
   export APP_PODMANARGS_LIMITS_FS
-  APP_PODMANARGS_LIMITS_PROXY="$(deploy_compute_limits_block "${APP_LIMIT_CPU_PROXY-}" "${APP_LIMIT_MEM_PROXY-}")"
-  APP_PODMANARGS_LIMITS_FE="$(deploy_compute_limits_block "${APP_LIMIT_CPU_FE-}" "${APP_LIMIT_MEM_FE-}")"
-  APP_PODMANARGS_LIMITS_BE="$(deploy_compute_limits_block "${APP_LIMIT_CPU_BE-}" "${APP_LIMIT_MEM_BE-}")"
-  APP_PODMANARGS_LIMITS_DB="$(deploy_compute_limits_block "${APP_LIMIT_CPU_DB-}" "${APP_LIMIT_MEM_DB-}")"
-  APP_PODMANARGS_LIMITS_STATE="$(deploy_compute_limits_block "${APP_LIMIT_CPU_STATE-}" "${APP_LIMIT_MEM_STATE-}")"
-  APP_PODMANARGS_LIMITS_WORKER="$(deploy_compute_limits_block "${APP_LIMIT_CPU_WORKER-}" "${APP_LIMIT_MEM_WORKER-}")"
-  APP_PODMANARGS_LIMITS_FS="$(deploy_compute_limits_block "${APP_LIMIT_CPU_FS-}" "${APP_LIMIT_MEM_FS-}")"
+  APP_PODMANARGS_LIMITS_PROXY="$(deploy_compute_limits_block "${APP_LIMIT_MEM_PROXY-}")"
+  APP_PODMANARGS_LIMITS_FE="$(deploy_compute_limits_block "${APP_LIMIT_MEM_FE-}")"
+  APP_PODMANARGS_LIMITS_BE="$(deploy_compute_limits_block "${APP_LIMIT_MEM_BE-}")"
+  APP_PODMANARGS_LIMITS_DB="$(deploy_compute_limits_block "${APP_LIMIT_MEM_DB-}")"
+  APP_PODMANARGS_LIMITS_STATE="$(deploy_compute_limits_block "${APP_LIMIT_MEM_STATE-}")"
+  APP_PODMANARGS_LIMITS_WORKER="$(deploy_compute_limits_block "${APP_LIMIT_MEM_WORKER-}")"
+  APP_PODMANARGS_LIMITS_FS="$(deploy_compute_limits_block "${APP_LIMIT_MEM_FS-}")"
   export APP_FS_VOLUME_MAX_GB="${APP_FS_VOLUME_MAX_GB:-100}"
   export APP_FS_VOLUME_MAX="${APP_FS_VOLUME_MAX_GB:-}"
   # Compute bind-mount options for DB/FS/state volumes when custom data paths are set
@@ -377,6 +379,8 @@ deploy_render_quadlets() {
   export APP_DATA_VOLUME_OPTIONS_FS=""
   export APP_DATA_VOLUME_OPTIONS_STATE=""
   local fs_data_path="${APP_FS_DATA_PATH:-${APP_DATA_PATH:-}}"
+  # "system" places fs_data on the default named volume while db/state stay on APP_DATA_PATH.
+  [[ "${fs_data_path}" == "system" ]] && fs_data_path=""
   if [[ -n "${APP_DATA_PATH:-}" ]]; then
     APP_DATA_VOLUME_OPTIONS_DB=$'Driver=local\nOptions=type=none,device='"${APP_DATA_PATH:-}/db"$',o=bind'
     APP_DATA_VOLUME_OPTIONS_STATE=$'Driver=local\nOptions=type=none,device='"${APP_DATA_PATH:-}/state"$',o=bind'

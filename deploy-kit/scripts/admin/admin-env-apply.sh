@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 #
-# Version: 0.26.3
+# Version: 0.28.9
 # Purpose: Apply Container Environment updates from Cockpit (base64 patch or stdin KEY=value lines),
 #          then delegate render + systemctl restart to install.sh __cockpit_apply_restart.
 # Deployment file: admin-env-apply.sh
+#
+# Changes in v0.28.9:
+# - Memory limit keys stay writable. Deprecated APP_LIMIT_CPU_* keys are ignored with a warning and are not written.
 #
 # Changes in v0.26.3:
 # - DEPLOYMENT_DIR is the kit root, two levels above this script (scripts/admin/).
@@ -114,13 +117,15 @@ while IFS= read -r line || [[ -n "${line}" ]]; do
   case "${key}" in
     APP_DOMAIN|APP_TLS_MODE|APP_ACME_EMAIL|APP_HTTP_PORT|APP_HTTPS_PORT|\
 APP_FIREWALL_ADMIN_ACCESS|APP_FIREWALL_ADMIN_ALLOWED|\
-APP_LIMIT_CPU_PROXY|APP_LIMIT_CPU_FE|APP_LIMIT_CPU_BE|APP_LIMIT_CPU_DB|APP_LIMIT_CPU_STATE|APP_LIMIT_CPU_WORKER|APP_LIMIT_CPU_FS|\
 APP_LIMIT_MEM_PROXY|APP_LIMIT_MEM_FE|APP_LIMIT_MEM_BE|APP_LIMIT_MEM_DB|APP_LIMIT_MEM_STATE|APP_LIMIT_MEM_WORKER|APP_LIMIT_MEM_FS)
       set_env_line "${TARGET_ENV}" "${key}" "${value}"
       if [[ "${key}" == "APP_DOMAIN" && "${value}" != "${old_domain}" ]]; then
         domain_changed=1
       fi
       ok "set ${key}"
+      ;;
+    APP_LIMIT_CPU_PROXY|APP_LIMIT_CPU_FE|APP_LIMIT_CPU_BE|APP_LIMIT_CPU_DB|APP_LIMIT_CPU_STATE|APP_LIMIT_CPU_WORKER|APP_LIMIT_CPU_FS)
+      warn "Ignoring deprecated key: ${key}"
       ;;
     *)
       err "Rejected key (not managed here): ${key}"

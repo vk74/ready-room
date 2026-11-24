@@ -10,9 +10,10 @@ Recommended specs for your physical server or virtual machine to run evi:
 **CPU:** 1 core for test, 2 cores or more depending on workload. installation script wil pull arm64 or amd64 app builds depending on your platfom
 
 
+
 **Network:** 1 NIC 
 
-**SSD** ~ 1.5 Gb of free space for containers environment + additional space as needed for DB and FS volumes. Separate drives or partitions for system, application, database, file services are recommended.
+**SSD** ~ 1.5 Gb of free space for containers environment + additional space as needed for DB and FS volumes.
 
 **OS:** EVI was tested on Ubuntu 24.04 and 26.04 and is compatible with any distributions of Debian family. The README paste installs `curl` (via `sudo apt-get update && sudo apt-get install -y curl`); you do not need to preinstall it. Podman, Cockpit, UFW, fail2ban, and the rest of the evi host stack are installed only when you start Deploy (option 2) in the installer. fail2ban also arrives later via update/repair from `prerequisites.conf`. It is not installed by the README paste or Configure. On a public IP, finish Deploy promptly so SSH is not left without an autoban jail. README still installs curl only.
 

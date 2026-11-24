@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Version: 0.28.6
+# Version: 0.28.9
 # Purpose: Interactive installer for application production deployment (images-only; no build).
 # Deployment file: install.sh
 # Logic:
@@ -13,6 +13,10 @@
 #   menu stays even if both env files exist.
 # - Non-interactive: __cockpit_apply_restart re-runs run_deploy_init + systemctl restart without prompts (Cockpit admin panel).
 # - Non-interactive: __continue_deploy resumes deploy_full() after exec re-launch with version-matched installer.
+#
+# Changes in v0.28.9:
+# - APP_FS_DATA_PATH=system keeps file storage on the default named volume when database data is on an external disk.
+# - State memory check and deploy log use APP_LIMIT_MEM_STATE as a percentage of host RAM (default 10%) and the derived Valkey maxmemory.
 #
 # Changes in v0.28.6:
 # - The check_resources fallback uses the same 0.75 GiB host-RAM tolerance as deploy_host_mem_gib.
@@ -1551,7 +1555,7 @@ check_resources() {
   local rt="${SCRIPTS_DIR}/lib/render-templates.sh"
   local helpers=0
   if [[ -f "${rt}" ]]; then
-    if ! declare -F deploy_pick_state_profile >/dev/null 2>&1; then
+    if ! declare -F deploy_state_maxmemory_for_limit >/dev/null 2>&1; then
       # shellcheck disable=SC1090
       source "${rt}"
     fi
@@ -1571,16 +1575,13 @@ check_resources() {
       printf "${RED}fail (host ram < 2gb (minimum 2gb). deployment stopped.)${NC}\n"
       return 1
     fi
-    local profile limit maxmem
-    if [[ -n "${APP_LIMIT_MEM_STATE:-}" ]]; then
-      limit="${APP_LIMIT_MEM_STATE:-}"
-      profile="$(deploy_state_profile_name_for_limit "${limit}")"
-    else
-      profile="$(deploy_pick_state_profile)"
-      limit="$(deploy_state_container_limit_for_profile "${profile}")"
-    fi
+    local limit maxmem
+    limit="${APP_LIMIT_MEM_STATE:-10%}"
+    case "${limit}" in
+      256m|512m|1g|2g|4g|8g) limit="10%" ;;
+    esac
     maxmem="$(deploy_state_maxmemory_for_limit "${limit}")"
-    profile_text="${profile}, state ${limit} / valkey ${maxmem}"
+    profile_text="state ${limit} / valkey ${maxmem}"
   else
     if [[ "${host_gib}" -lt 2 ]]; then
       printf "${RED}fail (host ram < 2gb (minimum 2gb). deployment stopped.)${NC}\n"
@@ -3963,7 +3964,12 @@ load_deploy_env() {
   export APP_STATE_DIR="${APP_STATE_DIR:-${APP_STATE_DIR_DEFAULT}}"
   export APP_QUADLET_DIR="${APP_QUADLET_DIR:-${APP_QUADLET_DIR_DEFAULT}}"
   export APP_DATA_PATH="${APP_DATA_PATH:-}"
-  export APP_FS_DATA_PATH="${APP_FS_DATA_PATH:-${APP_DATA_PATH:-}}"
+  # "system" is explicit: do not replace it with APP_DATA_PATH. Empty still follows APP_DATA_PATH.
+  if [[ "${APP_FS_DATA_PATH:-}" == "system" ]]; then
+    export APP_FS_DATA_PATH="system"
+  else
+    export APP_FS_DATA_PATH="${APP_FS_DATA_PATH:-${APP_DATA_PATH:-}}"
+  fi
   export APP_JWT_SECRET_NAME="${APP_JWT_SECRET_NAME:-jwt_private_key}"
   export APP_ADMIN_DB_USERNAME="${APP_ADMIN_DB_USERNAME:-evidba}"
   export APP_PGADMIN_ENABLED="${APP_PGADMIN_ENABLED:-false}"
@@ -4013,8 +4019,10 @@ deploy_ensure_dirs() {
   if [[ -d "${APP_STATE_DIR:-}/pgadmin/data" ]]; then
     podman unshare chown -R 5050:5050 "${APP_STATE_DIR:-}/pgadmin/data" 2>/dev/null || true
   fi
-  # Ensure data directories exist when using separate disks for DB, FS, and/or state volumes
+  # Ensure data directories exist when using separate disks for DB, FS, and/or state volumes.
+  # "system" means the default named volume: no external fs bind directory.
   local fs_data_path="${APP_FS_DATA_PATH:-${APP_DATA_PATH:-}}"
+  [[ "${fs_data_path}" == "system" ]] && fs_data_path=""
   if [[ -n "${APP_DATA_PATH:-}" ]]; then
     mkdir -p "${APP_DATA_PATH:-}/db" 2>/dev/null || true
     mkdir -p "${APP_DATA_PATH:-}/state" 2>/dev/null || true
@@ -4035,7 +4043,7 @@ ensure_render_templates_sourced() {
   _RENDER_TEMPLATES_LOADED=1
 }
 
-# Shared by run_deploy_init and restore: fill/persist state RAM profile, then render valkey.conf.
+# Shared by run_deploy_init and restore: default state memory to 10% of host RAM, then render valkey.conf.
 deploy_apply_and_render_state_memory() {
   ensure_render_templates_sourced
   deploy_apply_state_memory_profile || true
@@ -4045,10 +4053,9 @@ deploy_apply_and_render_state_memory() {
   [[ -f "${src}" ]] || die "valkey.conf not found at ${src} (required for state). When using sparse-checkout, ensure deploy/state/ is checked out."
   deploy_render_valkey_conf "${src}" "${APP_STATE_DIR:-}/valkey/valkey.conf"
   local limit="${APP_LIMIT_MEM_STATE:-}"
-  local maxmem profile
+  local maxmem
   maxmem="$(deploy_state_maxmemory_for_limit "${limit}")"
-  profile="$(deploy_state_profile_name_for_limit "${limit}")"
-  log "state memory profile ${profile} → APP_LIMIT_MEM_STATE=${limit} maxmemory ${maxmem}"
+  log "state memory limit APP_LIMIT_MEM_STATE=${limit} → maxmemory ${maxmem}"
 }
 
 deploy_create_or_update_secret_from_file() {
@@ -4694,6 +4701,7 @@ wipe_existing_installation_for_restore() {
   if [[ -f "${TARGET_ENV}" ]]; then
     old_db_path=$(_restore_read_env_value "${TARGET_ENV}" "APP_DATA_PATH")
     old_fs_path=$(_restore_read_env_value "${TARGET_ENV}" "APP_FS_DATA_PATH")
+    [[ "${old_fs_path}" == "system" ]] && old_fs_path=""
     old_jwt_secret=$(_restore_read_env_value "${TARGET_ENV}" "APP_JWT_SECRET_NAME")
     old_fs_secret=$(_restore_read_env_value "${TARGET_ENV}" "APP_FS_SECRET_NAME")
     old_valkey_secret=$(_restore_read_env_value "${TARGET_ENV}" "APP_VALKEY_SECRET_NAME")
@@ -4929,14 +4937,19 @@ restore_validate_or_pick_data_paths() {
     export APP_DATA_PATH="${SELECTED_DATA_PATH}"
   fi
 
-  if [[ -n "${raw_fs_path}" ]] && ! _restore_path_writable "${raw_fs_path}" "fs"; then
+  if [[ -n "${raw_fs_path}" && "${raw_fs_path}" != "system" ]] && ! _restore_path_writable "${raw_fs_path}" "fs"; then
     warn "file storage (FS) data path from backup (${raw_fs_path}) is not available or not writable on this server."
     prompt_data_storage_path "restore" "file storage (FS) volume storage" "file storage"
     _restore_set_env_key "${TARGET_ENV}" "APP_FS_DATA_PATH" "${SELECTED_DATA_PATH}"
     export APP_FS_DATA_PATH="${SELECTED_DATA_PATH}"
   fi
 
-  export APP_FS_DATA_PATH="${APP_FS_DATA_PATH:-${APP_DATA_PATH:-}}"
+  # Keep an explicit system-disk sentinel. Empty still follows APP_DATA_PATH.
+  if [[ "${APP_FS_DATA_PATH:-${raw_fs_path}}" == "system" ]]; then
+    export APP_FS_DATA_PATH="system"
+  else
+    export APP_FS_DATA_PATH="${APP_FS_DATA_PATH:-${APP_DATA_PATH:-}}"
+  fi
 }
 
 # Drop dangling images and old tags that are not the ones this restore configured.

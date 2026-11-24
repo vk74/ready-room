@@ -1,7 +1,10 @@
-# Version: 0.26.2
+# Version: 0.28.9
 # Purpose: Podman Quadlet container unit for evi backend API.
 # Deployment file: be.container
 # Logic: Runs backend only on internal network; exposed externally via reverse-proxy (Caddy) as /api over HTTPS.
+#
+# Changes in v0.28.9:
+# - Move the memory limit into [Service] as MemoryMax=.
 #
 # Changes in v0.26.2:
 # - Rename EVI_* configuration keys and template placeholders to APP_* (EVI_APP_DB_PASSWORD becomes APP_DB_PASSWORD).
@@ -124,12 +127,12 @@ Environment=FS_BUCKET={{APP_FS_BUCKET}}
 Environment=FS_ACCESS_KEY={{APP_FS_ACCESS_KEY}}
 Environment=FS_SECRET_KEY={{APP_FS_SECRET_KEY}}
 
-# Resource limits (optional)
-{{APP_PODMANARGS_LIMITS_BE}}
-
 [Service]
 Restart=always
 TimeoutStartSec=180
+
+# Resource limits (optional)
+{{APP_PODMANARGS_LIMITS_BE}}
 
 [Install]
 WantedBy=default.target

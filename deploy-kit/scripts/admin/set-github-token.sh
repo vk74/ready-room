@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 #
-# Version: 0.27.4
+# Version: 0.28.9
 # Purpose: Persist a GitHub access key from stdin, login to GHCR, re-render only
 #   the worker quadlet, and restart only worker. Invoked from Cockpit via
 #   update-dispatch (set-github-token). Token is never printed or placed
 #   in argv. Persist success is independent of GHCR login / worker restart.
 # File: set-github-token.sh
+#
+# Changes in v0.28.9:
+# - Worker quadlet memory limit is rendered from APP_LIMIT_MEM_WORKER only.
 #
 # Changes in v0.27.4:
 # - Normalize a legacy APP_INSTALL_REPO (owner vk74, repository evi) in config/app.env to the kit default (vk74/ready-room) before rendering worker.container.
@@ -99,7 +102,7 @@ set +e
   # shellcheck disable=SC1090
   source "${APP_HOME}/scripts/lib/render-templates.sh"
 
-  APP_PODMANARGS_LIMITS_WORKER="$(deploy_compute_limits_block "${APP_LIMIT_CPU_WORKER-}" "${APP_LIMIT_MEM_WORKER-}")"
+  APP_PODMANARGS_LIMITS_WORKER="$(deploy_compute_limits_block "${APP_LIMIT_MEM_WORKER-}")"
   deploy_render_template_file "${TPL_DIR}/worker.container" "${APP_QUADLET_DIR:-}/worker.container"
   systemctl --user daemon-reload >/dev/null 2>&1
   systemctl --user restart worker >/dev/null 2>&1

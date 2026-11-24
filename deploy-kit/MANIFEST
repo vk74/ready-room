@@ -1,5 +1,5 @@
 #
-# Version: 0.27.2
+# Version: 0.28.9
 # Purpose: Single source of truth for the files that MUST be present in the
 #   deploy-kit for it to function. Consumed by the release gate
 #   (validate_prerequisites in release.sh) and by kit-archive validation
@@ -8,6 +8,9 @@
 #   Adding a load-bearing file to this kit means adding it here in the same
 #   commit.
 # File: MANIFEST
+#
+# Changes in v0.28.9:
+# - Added the admin disk status, cleanup, and storage scripts, and the disk status helper.
 #
 # Changes in v0.27.2:
 # - Added deploy-kit/scripts/admin/admin-env-apply.sh and deploy-kit/scripts/admin/admin-set-admin-password.sh.
@@ -66,6 +69,9 @@ deploy-kit/scripts/admin/set-github-token.sh
 deploy-kit/scripts/admin/check-disk-space.sh
 deploy-kit/scripts/admin/admin-env-apply.sh
 deploy-kit/scripts/admin/admin-set-admin-password.sh
+deploy-kit/scripts/admin/admin-disk-status.sh
+deploy-kit/scripts/admin/admin-disk-cleanup.sh
+deploy-kit/scripts/admin/admin-storage-apply.sh
 deploy-kit/scripts/host/sync-host-prerequisites.sh
 deploy-kit/scripts/host/install-cockpit-files.sh
 deploy-kit/scripts/host/install-fail2ban.sh
@@ -115,6 +121,7 @@ deploy-kit/cockpit-app-admin/index.html
 deploy-kit/cockpit-app-admin/admin.js
 deploy-kit/cockpit-app-admin/update.js
 deploy-kit/cockpit-app-admin/helper.update.status.js
+deploy-kit/cockpit-app-admin/helper.disk.status.js
 deploy-kit/cockpit-app-admin/admin.css
 deploy-kit/cockpit-app-admin/admin-dispatch.sh.tpl
 deploy-kit/cockpit-app-admin/update-dispatch.sh.tpl

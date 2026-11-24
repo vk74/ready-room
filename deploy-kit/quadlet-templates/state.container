@@ -1,9 +1,13 @@
-# Version: 0.26.2
+# Version: 0.28.9
 # Purpose: Podman Quadlet container unit for state store (Valkey in-memory store).
 # Deployment file: state.container
 # Logic: Runs Valkey on internal network only (no host port). Persistent: /data is
-#       the named volume state_data (AOF). Password from Podman secret (mount),
-#       not in process args or env.
+#       the named volume state_data (AOF). Password and maxmemory are written at
+#       start into /tmp/valkey-auth.conf from the Podman secret and APP_LIMIT_MEM_STATE.
+#
+# Changes in v0.28.9:
+# - Move the memory limit into [Service] as MemoryMax=. Add RestartSec=5s.
+# - Pass APP_LIMIT_MEM_STATE into the container and set Valkey maxmemory at start from host MemTotal (50% of that limit, minimum 50mb).
 #
 # Changes in v0.26.2:
 # - Rename EVI_* configuration keys and template placeholders to APP_* (EVI_APP_DB_PASSWORD becomes APP_DB_PASSWORD).
@@ -57,16 +61,20 @@ Network={{APP_NETWORK}}
 Volume={{APP_STATE_DIR}}/valkey/valkey.conf:/etc/valkey/valkey.conf:ro,Z
 Volume=state_data:/data:Z
 
-# Password from Podman secret (file mount); written to temp config and included so it never appears in ps/env
+# Password from Podman secret (file mount). requirepass and maxmemory are written
+# to a temp include so neither appears in process args. maxmemory is 50% of the
+# APP_LIMIT_MEM_STATE container limit (default 10% of host RAM), minimum 50mb.
 PodmanArgs=--secret={{APP_VALKEY_SECRET_NAME}},type=mount,target=/run/secrets/valkey_password
-Exec=/bin/sh -c "printf 'requirepass %%s\n' \"$(cat /run/secrets/valkey_password)\" > /tmp/valkey-auth.conf && exec valkey-server /etc/valkey/valkey.conf --include /tmp/valkey-auth.conf"
-
-# Resource limits (optional)
-{{APP_PODMANARGS_LIMITS_STATE}}
+Environment=APP_LIMIT_MEM_STATE={{APP_LIMIT_MEM_STATE}}
+Exec=/bin/sh -c "pct=$(printf '%%s' \"${APP_LIMIT_MEM_STATE:-10}\" | tr -dc '0-9'); [ -z \"$pct\" ] && pct=10; maxmb=$(awk -v p=\"$pct\" '/^MemTotal:/ { m=int($2*p/100/2/1024); if (m<50) m=50; print m; exit }' /proc/meminfo); printf 'requirepass %%s\nmaxmemory %%smb\n' \"$(cat /run/secrets/valkey_password)\" \"${maxmb:-50}\" > /tmp/valkey-auth.conf && exec valkey-server /etc/valkey/valkey.conf --include /tmp/valkey-auth.conf"
 
 [Service]
 Restart=always
+RestartSec=5s
 TimeoutStartSec=120
+
+# Resource limits (optional)
+{{APP_PODMANARGS_LIMITS_STATE}}
 
 [Install]
 WantedBy=default.target

@@ -1,8 +1,12 @@
-/* Version: 0.28.8
+/* Version: 0.28.9
  * Purpose: Styles for the admin tools Cockpit package.
  * Two-panel layout: left navigation sidebar + right content area.
  * Includes dark theme support via .theme-dark class on <html>, synced from Cockpit shell.
  * Cockpit package; filename: admin.css
+ *
+ * Changes in v0.28.9:
+ * - Disk Status section is 880px wide. Donut charts, role badges, cleanup rows, and critical or warning card borders cover light and dark themes.
+ * - Resource limits grid is two columns (container and memory), max width 440px.
  *
  * Changes in v0.28.8:
  * - Downloaded cell lays the staged version and compact Delete button in a row, including on narrow screens.
@@ -233,7 +237,8 @@ html.theme-dark {
   max-width: 720px;
 }
 
-#section-updates.admin-section {
+#section-updates.admin-section,
+#section-disk-status.admin-section {
   max-width: 880px;
 }
 
@@ -687,9 +692,9 @@ html.theme-dark .admin-domain-warning {
 
 .admin-limits-grid {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr;
+  grid-template-columns: 2fr 1fr;
   width: 100%;
-  max-width: 640px;
+  max-width: 440px;
   margin-bottom: 8px;
 }
 
@@ -1950,61 +1955,361 @@ html.theme-dark .admin-disk-card-title {
 .admin-disk-card-path {
   font-size: 12px;
   color: var(--pf-v5-global--Color--200, #6a6e73);
-  margin: 0 0 12px 0;
+  margin: 0;
   font-family: var(--pf-v5-global--FontFamily--monospace, "RedHatMono", "Liberation Mono", monospace);
 }
 
-.admin-disk-bar-wrapper {
+html.theme-dark .admin-disk-card-path {
+  color: var(--pf-v5-global--Color--200, #c9c9c9);
+}
+
+.admin-disk-card-critical {
+  border-color: #c9190b;
+  border-width: 2px;
+}
+
+.admin-disk-card-warning {
+  border-color: #b95c00;
+  border-width: 2px;
+}
+
+html.theme-dark .admin-disk-card-critical {
+  border-color: #fe8f8f;
+}
+
+html.theme-dark .admin-disk-card-warning {
+  border-color: #f5ab00;
+}
+
+.admin-disk-toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
-  margin-bottom: 8px;
+  margin-bottom: 16px;
 }
 
-.admin-disk-bar-track {
+.admin-disk-toolbar .admin-status {
   flex: 1;
-  height: 16px;
-  background: var(--pf-v5-global--BackgroundColor--200, #f0f0f0);
-  border-radius: 8px;
-  overflow: hidden;
+  margin-bottom: 0;
+  min-width: 220px;
 }
 
-html.theme-dark .admin-disk-bar-track {
-  background: var(--pf-v5-global--BackgroundColor--dark-100, #0f1114);
+.admin-disk-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 14px;
 }
 
-.admin-disk-bar-fill {
-  height: 100%;
-  border-radius: 8px;
-  transition: width 0.3s ease;
-  background: #06c;
-}
-
-.admin-disk-bar-fill.disk-warn {
-  background: #f0ab00;
-}
-
-.admin-disk-bar-fill.disk-crit {
-  background: #c9190b;
-}
-
-.admin-disk-bar-pct {
-  font-size: 14px;
+.admin-disk-role-badge {
+  display: inline-block;
+  font-size: 11px;
   font-weight: 600;
-  min-width: 40px;
-  text-align: right;
+  line-height: 1.4;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e7f1fa;
+  color: #0066cc;
+}
+
+.admin-disk-role-badge-available {
+  background: #f0f0f0;
+  color: #6a6e73;
+}
+
+html.theme-dark .admin-disk-role-badge {
+  background: #003366;
+  color: #b9dafc;
+}
+
+html.theme-dark .admin-disk-role-badge-available {
+  background: #2f343a;
+  color: #c9c9c9;
+}
+
+.admin-disk-card-body {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+
+.admin-disk-donut-col {
+  flex: 0 0 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.admin-disk-legend-col {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-donut-wrap {
+  position: relative;
+  width: 140px;
+  height: 140px;
+}
+
+.admin-donut-track,
+.admin-donut-seg {
+  fill: none;
+  stroke-width: 16;
+  stroke-linecap: butt;
+}
+
+.admin-donut-track {
+  stroke: #e2e6ea;
+}
+
+html.theme-dark .admin-donut-track {
+  stroke: #2f343a;
+}
+
+.admin-donut-seg.disk-seg-db { stroke: #0066cc; }
+.admin-donut-seg.disk-seg-fs { stroke: #009596; }
+.admin-donut-seg.disk-seg-state { stroke: #6753ac; }
+.admin-donut-seg.disk-seg-images { stroke: #ec7a08; }
+.admin-donut-seg.disk-seg-backups { stroke: #3e8635; }
+.admin-donut-seg.disk-seg-updates { stroke: #b95c00; }
+.admin-donut-seg.disk-seg-other { stroke: #6a6e73; }
+.admin-donut-seg.disk-seg-free { stroke: #e2e6ea; }
+
+html.theme-dark .admin-donut-seg.disk-seg-db { stroke: #2b9af3; }
+html.theme-dark .admin-donut-seg.disk-seg-fs { stroke: #37a3a3; }
+html.theme-dark .admin-donut-seg.disk-seg-state { stroke: #a18fff; }
+html.theme-dark .admin-donut-seg.disk-seg-images { stroke: #f4b678; }
+html.theme-dark .admin-donut-seg.disk-seg-backups { stroke: #7cc674; }
+html.theme-dark .admin-donut-seg.disk-seg-updates { stroke: #f0ab00; }
+html.theme-dark .admin-donut-seg.disk-seg-other { stroke: #8a8d90; }
+html.theme-dark .admin-donut-seg.disk-seg-free { stroke: #2f343a; }
+
+.admin-donut-center {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.admin-donut-pct {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.1;
   color: var(--pf-v5-global--Color--100, #151515);
 }
 
-html.theme-dark .admin-disk-bar-pct {
+html.theme-dark .admin-donut-pct {
   color: var(--pf-v5-global--Color--100, #e0e0e0);
 }
 
-.admin-disk-details {
+.admin-donut-pct.status-level-critical {
+  color: #c9190b;
+}
+
+.admin-donut-pct.status-level-warning {
+  color: #b95c00;
+}
+
+html.theme-dark .admin-donut-pct.status-level-critical {
+  color: #fe8f8f;
+}
+
+html.theme-dark .admin-donut-pct.status-level-warning {
+  color: #f5ab00;
+}
+
+.admin-donut-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+}
+
+html.theme-dark .admin-donut-sub {
+  color: var(--pf-v5-global--Color--200, #c9c9c9);
+}
+
+.admin-disk-totals {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+}
+
+html.theme-dark .admin-disk-totals {
+  color: var(--pf-v5-global--Color--200, #c9c9c9);
+}
+
+.admin-disk-legend-row {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 3px 0;
+  font-size: 13px;
+  color: var(--pf-v5-global--Color--100, #151515);
+}
+
+html.theme-dark .admin-disk-legend-row {
+  color: var(--pf-v5-global--Color--100, #e0e0e0);
+}
+
+.admin-disk-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.admin-disk-swatch.disk-seg-db { background: #0066cc; }
+.admin-disk-swatch.disk-seg-fs { background: #009596; }
+.admin-disk-swatch.disk-seg-state { background: #6753ac; }
+.admin-disk-swatch.disk-seg-images { background: #ec7a08; }
+.admin-disk-swatch.disk-seg-backups { background: #3e8635; }
+.admin-disk-swatch.disk-seg-updates { background: #b95c00; }
+.admin-disk-swatch.disk-seg-other { background: #6a6e73; }
+.admin-disk-swatch.disk-seg-free {
+  background: #e2e6ea;
+  box-shadow: inset 0 0 0 1px #c5c9ce;
+}
+
+html.theme-dark .admin-disk-swatch.disk-seg-db { background: #2b9af3; }
+html.theme-dark .admin-disk-swatch.disk-seg-fs { background: #37a3a3; }
+html.theme-dark .admin-disk-swatch.disk-seg-state { background: #a18fff; }
+html.theme-dark .admin-disk-swatch.disk-seg-images { background: #f4b678; }
+html.theme-dark .admin-disk-swatch.disk-seg-backups { background: #7cc674; }
+html.theme-dark .admin-disk-swatch.disk-seg-updates { background: #f0ab00; }
+html.theme-dark .admin-disk-swatch.disk-seg-other { background: #8a8d90; }
+html.theme-dark .admin-disk-swatch.disk-seg-free {
+  background: #2f343a;
+  box-shadow: inset 0 0 0 1px #4a4e53;
+}
+
+.admin-disk-legend-bytes,
+.admin-disk-legend-pct {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+}
+
+html.theme-dark .admin-disk-legend-bytes,
+html.theme-dark .admin-disk-legend-pct {
+  color: var(--pf-v5-global--Color--200, #c9c9c9);
+}
+
+.admin-disk-cleanup-card {
+  border: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
+  border-radius: 8px;
+  background: var(--pf-v5-global--BackgroundColor--100, #fff);
+  padding: 4px 16px;
+}
+
+html.theme-dark .admin-disk-cleanup-card {
+  background: var(--pf-v5-global--BackgroundColor--100, #212427);
+  border-color: var(--pf-v5-global--BorderColor--100, #3c3f42);
+}
+
+.admin-disk-cleanup-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
+}
+
+.admin-disk-cleanup-row:last-child {
+  border-bottom: none;
+}
+
+html.theme-dark .admin-disk-cleanup-row {
+  border-bottom-color: var(--pf-v5-global--BorderColor--100, #3c3f42);
+}
+
+.admin-disk-cleanup-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.admin-disk-cleanup-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--pf-v5-global--Color--100, #151515);
+}
+
+html.theme-dark .admin-disk-cleanup-title {
+  color: var(--pf-v5-global--Color--100, #e0e0e0);
+}
+
+.admin-disk-cleanup-info {
+  margin-top: 2px;
   font-size: 13px;
   color: var(--pf-v5-global--Color--200, #6a6e73);
 }
 
-html.theme-dark .admin-disk-details {
+html.theme-dark .admin-disk-cleanup-info {
   color: var(--pf-v5-global--Color--200, #c9c9c9);
+}
+
+.admin-disk-cleanup-row .admin-btn {
+  flex: 0 0 auto;
+}
+
+.admin-disk-backups-list {
+  margin-top: 8px;
+}
+
+.admin-disk-backup-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+  font-size: 13px;
+}
+
+.admin-disk-backup-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--pf-v5-global--FontFamily--monospace, "RedHatMono", "Liberation Mono", monospace);
+}
+
+.admin-disk-backup-size,
+.admin-disk-backup-date {
+  flex: 0 0 auto;
+  color: var(--pf-v5-global--Color--200, #6a6e73);
+  font-variant-numeric: tabular-nums;
+}
+
+html.theme-dark .admin-disk-backup-size,
+html.theme-dark .admin-disk-backup-date {
+  color: var(--pf-v5-global--Color--200, #c9c9c9);
+}
+
+@media (max-width: 639px) {
+  .admin-disk-card-body {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-disk-donut-col {
+    flex-basis: auto;
+  }
+
+  .admin-disk-cleanup-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .admin-disk-backup-row {
+    flex-wrap: wrap;
+  }
 }

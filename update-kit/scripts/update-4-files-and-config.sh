@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 #
-# Version: 0.27.2
+# Version: 0.28.9
 # Purpose: Phase 4/5 of an application update: replace kits, merge env and secrets, update image tags, render templates, reload systemd, and refresh the disk monitor. Takes APP_HOME as $1. Does not pull images.
 # File: update-4-files-and-config.sh
+#
+# Changes in v0.28.9:
+# - State memory log reports APP_LIMIT_MEM_STATE and the derived Valkey maxmemory.
 #
 # Changes in v0.27.2:
 # - Sync APP_INSTALL_REPO in config/app.env from app.template.env during update_all_image_tags().
@@ -349,10 +352,9 @@ load_env_and_render() {
   deploy_warn_state_disk_if_needed
   deploy_render_valkey_conf "${APP_HOME}/state/valkey.conf" "${APP_STATE_DIR:-}/valkey/valkey.conf"
   local st_limit="${APP_LIMIT_MEM_STATE:-}"
-  local st_maxmem st_profile
+  local st_maxmem
   st_maxmem="$(deploy_state_maxmemory_for_limit "${st_limit}")"
-  st_profile="$(deploy_state_profile_name_for_limit "${st_limit}")"
-  log_tee " ${SYM_OK} state memory profile ${st_profile} → APP_LIMIT_MEM_STATE=${st_limit} maxmemory ${st_maxmem}"
+  log_tee " ${SYM_OK} state memory limit APP_LIMIT_MEM_STATE=${st_limit} → maxmemory ${st_maxmem}"
 
   # Clean existing quadlet files
   log_tee "   removing old quadlet files..."
